@@ -17,7 +17,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck bats
           curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-          curl -s https://raw.githubusercontent.com/mvdan/sh/v3.10.0/_download/install.sh | sh -s -- -b /usr/local/bin v3.10.0
+          curl -sSL "https://github.com/mvdan/sh/releases/download/v3.10.0/shfmt_v3.10.0_linux_amd64" -o /usr/local/bin/shfmt
+          chmod +x /usr/local/bin/shfmt
 
       - uses: hashicorp/setup-terraform@v3
         with:
