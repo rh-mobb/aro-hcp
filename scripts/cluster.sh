@@ -53,24 +53,54 @@ cmd_create() {
 
   build_identity_args
 
+  case "${API_VISIBILITY}" in
+    Public) ;;
+    Private) ;;
+    *)
+      die "API_VISIBILITY must be Public or Private (got '${API_VISIBILITY}')"
+      ;;
+  esac
+
   log "Creating cluster ${CLUSTER_NAME} (this may take 30-60 minutes)"
-  az aro hcp cluster create \
-    --resource-group "${RESOURCE_GROUP}" \
-    --name "${CLUSTER_NAME}" \
-    --location "${LOCATION}" \
-    --version "${CLUSTER_VERSION}" \
-    --channel-group "${CLUSTER_CHANNEL}" \
-    --subnet-id "${subnet_id}" \
-    --vnet-integration-subnet-id "${vnet_int_subnet}" \
-    --nsg "${nsg_id}" \
-    --managed-resource-group-name "${MANAGED_RESOURCE_GROUP}" \
-    --key-management-mode CustomerManaged \
-    --etcd-encryption-type KMS \
-    --kms-vault-name "${kv_name}" \
-    --vault-visibility Public \
-    --kms-active-key "{name:etcd-data-kms-encryption-key,version:${key_version}}" \
-    --user-assigned-identities "${USER_ASSIGNED_IDENTITIES}" \
-    --operators-authentication "${OPERATORS_AUTH}"
+  # Duplicate create invocations: bash 3.2 + set -u rejects empty arrays for optional flags.
+  if [[ "${API_VISIBILITY}" == "Private" ]]; then
+    az aro hcp cluster create \
+      --resource-group "${RESOURCE_GROUP}" \
+      --name "${CLUSTER_NAME}" \
+      --location "${LOCATION}" \
+      --version "${CLUSTER_VERSION}" \
+      --channel-group "${CLUSTER_CHANNEL}" \
+      --subnet-id "${subnet_id}" \
+      --vnet-integration-subnet-id "${vnet_int_subnet}" \
+      --nsg "${nsg_id}" \
+      --managed-resource-group-name "${MANAGED_RESOURCE_GROUP}" \
+      --key-management-mode CustomerManaged \
+      --etcd-encryption-type KMS \
+      --kms-vault-name "${kv_name}" \
+      --vault-visibility Public \
+      --kms-active-key "{name:etcd-data-kms-encryption-key,version:${key_version}}" \
+      --user-assigned-identities "${USER_ASSIGNED_IDENTITIES}" \
+      --operators-authentication "${OPERATORS_AUTH}" \
+      --api-visibility Private
+  else
+    az aro hcp cluster create \
+      --resource-group "${RESOURCE_GROUP}" \
+      --name "${CLUSTER_NAME}" \
+      --location "${LOCATION}" \
+      --version "${CLUSTER_VERSION}" \
+      --channel-group "${CLUSTER_CHANNEL}" \
+      --subnet-id "${subnet_id}" \
+      --vnet-integration-subnet-id "${vnet_int_subnet}" \
+      --nsg "${nsg_id}" \
+      --managed-resource-group-name "${MANAGED_RESOURCE_GROUP}" \
+      --key-management-mode CustomerManaged \
+      --etcd-encryption-type KMS \
+      --kms-vault-name "${kv_name}" \
+      --vault-visibility Public \
+      --kms-active-key "{name:etcd-data-kms-encryption-key,version:${key_version}}" \
+      --user-assigned-identities "${USER_ASSIGNED_IDENTITIES}" \
+      --operators-authentication "${OPERATORS_AUTH}"
+  fi
 }
 
 cmd_show() {

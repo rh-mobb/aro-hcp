@@ -30,6 +30,24 @@ EOF
   [[ "$output" == *"Creating cluster"* ]]
 }
 
+@test "cluster create omits Private visibility by default" {
+  AZ_CLUSTER_EXISTS=0 run bash "${BATS_TEST_DIRNAME}/../../scripts/cluster.sh" create
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"--api-visibility Private"* ]]
+}
+
+@test "cluster create passes Private visibility when API_VISIBILITY=Private" {
+  AZ_CLUSTER_EXISTS=0 API_VISIBILITY=Private run bash "${BATS_TEST_DIRNAME}/../../scripts/cluster.sh" create
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--api-visibility Private"* ]]
+}
+
+@test "cluster create rejects invalid API_VISIBILITY" {
+  AZ_CLUSTER_EXISTS=0 API_VISIBILITY=garbage run bash "${BATS_TEST_DIRNAME}/../../scripts/cluster.sh" create
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"API_VISIBILITY"* ]]
+}
+
 @test "nodepool create skips when nodepool already exists" {
   run bash "${BATS_TEST_DIRNAME}/../../scripts/nodepool.sh" create
   [ "$status" -eq 0 ]
