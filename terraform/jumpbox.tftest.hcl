@@ -15,6 +15,7 @@ variables {
   cluster_name        = "test-cluster"
   resource_group_name = "test-rg"
   location            = "uksouth"
+  enable_jumpbox      = false
 }
 
 run "jumpbox_off_by_default" {
