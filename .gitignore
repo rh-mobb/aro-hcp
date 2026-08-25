@@ -11,6 +11,8 @@ override.tf.json
 
 # Local config and secrets
 config/cluster.env
+config/jump
+config/jump.pub
 *.tfvars
 !*.tfvars.example
 
