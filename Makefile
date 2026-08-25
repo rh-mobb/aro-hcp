@@ -40,15 +40,22 @@ $(eval $(call export_tf_if_set,NODEPOOL_VM_SIZE,node_pool_vm_size))
 $(eval $(call export_tf_if_set,NODEPOOL_VERSION,node_pool_version))
 $(eval $(call export_tf_if_set,NODEPOOL_CHANNEL,node_pool_channel))
 $(eval $(call export_tf_if_set,API_VISIBILITY,api_visibility))
+$(eval $(call export_tf_if_set,ENABLE_JUMPBOX,enable_jumpbox))
+$(eval $(call export_tf_if_set,JUMP_SSH_SOURCE_PREFIX,jump_ssh_source_prefix))
 
 TF_VARS_TO_UNSET := TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_name \
 	TF_VAR_vnet_name TF_VAR_subnet_name TF_VAR_vnet_integration_subnet_name TF_VAR_nsg_name \
 	TF_VAR_managed_resource_group_name TF_VAR_cluster_version TF_VAR_cluster_channel \
 	TF_VAR_node_pool_name TF_VAR_node_pool_replicas TF_VAR_node_pool_vm_size \
-	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility
+	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility \
+	TF_VAR_enable_jumpbox TF_VAR_jump_ssh_source_prefix TF_VAR_jump_ssh_public_key
+
+ENABLE_JUMPBOX ?= false
+JUMP_SSH_PUBLIC_KEY_PATH ?= $(ROOT_DIR)/config/jump.pub
 
 .PHONY: help fmt lint test bootstrap init plan apply cluster nodepool all \
-	kubeconfig revoke-credentials versions external-auth external-auth-delete destroy
+	kubeconfig revoke-credentials versions external-auth external-auth-delete destroy \
+	jump-key jump jump-pub-check
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z0-9_.-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -75,11 +82,32 @@ bootstrap: ## Install tools and az aro hcp extension
 init: ## Terraform init
 	terraform -chdir=$(TF_DIR) init
 
-plan: init ## Terraform plan
-	terraform -chdir=$(TF_DIR) plan
+jump-pub-check:
+ifeq ($(ENABLE_JUMPBOX),true)
+	@test -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" || (echo "Missing $(JUMP_SSH_PUBLIC_KEY_PATH). Run: make jump-key" >&2; exit 1)
+endif
 
-apply: init ## Terraform apply (prereqs + cluster + default node pool)
+plan: init jump-pub-check ## Terraform plan
+ifeq ($(ENABLE_JUMPBOX),true)
+	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
+	terraform -chdir=$(TF_DIR) plan
+else
+	terraform -chdir=$(TF_DIR) plan
+endif
+
+apply: init jump-pub-check ## Terraform apply (prereqs + cluster + default node pool)
+ifeq ($(ENABLE_JUMPBOX),true)
+	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
 	terraform -chdir=$(TF_DIR) apply -auto-approve
+else
+	terraform -chdir=$(TF_DIR) apply -auto-approve
+endif
+
+jump-key: ## Generate config/jump ed25519 keypair if missing
+	bash $(SCRIPTS)/jump.sh key
+
+jump: ## Print sshuttle command for the jump VM
+	bash $(SCRIPTS)/jump.sh show
 
 cluster: apply ## Create cluster via Terraform (alias of apply)
 
@@ -103,6 +131,11 @@ external-auth: bootstrap kubeconfig ## Configure Entra external auth + console
 external-auth-delete: bootstrap ## Remove external auth and Entra app
 	bash $(SCRIPTS)/external-auth.sh delete
 
-destroy: bootstrap init ## Tear down: state-rm last pool then terraform destroy (OCPBUGS-86702)
+destroy: bootstrap init jump-pub-check ## Tear down: state-rm last pool then terraform destroy (OCPBUGS-86702)
 	-bash $(SCRIPTS)/external-auth.sh delete
+ifeq ($(ENABLE_JUMPBOX),true)
+	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
 	bash $(SCRIPTS)/destroy.sh
+else
+	bash $(SCRIPTS)/destroy.sh
+endif

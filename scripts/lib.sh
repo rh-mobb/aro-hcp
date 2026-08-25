@@ -39,6 +39,9 @@ load_config() {
   : "${NODEPOOL_VERSION:=${CLUSTER_VERSION}}"
   : "${EXTERNAL_AUTH_NAME:=entra}"
   : "${APP_DISPLAY_NAME:=${CLUSTER_NAME}-auth}"
+  : "${API_VISIBILITY:=Public}"
+  : "${ENABLE_JUMPBOX:=false}"
+  : "${JUMP_SSH_PUBLIC_KEY_PATH:=${ROOT_DIR}/config/jump.pub}"
 }
 
 tf_output() {
