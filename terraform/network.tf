@@ -46,4 +46,12 @@ resource "azapi_resource" "vnet_integration_subnet" {
       ]
     }
   }
+
+  # Concurrent subnet writes on the same VNet return an Azure API conflict.
+  depends_on = [
+    azurerm_virtual_network.this,
+    azurerm_subnet.worker,
+    azurerm_network_security_group.this,
+    azurerm_subnet_network_security_group_association.worker,
+  ]
 }

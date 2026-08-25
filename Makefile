@@ -21,6 +21,25 @@ TF_VAR_vnet_name ?= $(VNET_NAME)
 TF_VAR_subnet_name ?= $(SUBNET_NAME)
 TF_VAR_vnet_integration_subnet_name ?= $(VNET_INTEGRATION_SUBNET_NAME)
 TF_VAR_nsg_name ?= $(NSG_NAME)
+TF_VAR_managed_resource_group_name ?= $(MANAGED_RESOURCE_GROUP)
+TF_VAR_cluster_version ?= $(CLUSTER_VERSION)
+TF_VAR_cluster_channel ?= $(CLUSTER_CHANNEL)
+TF_VAR_node_pool_name ?= $(NODEPOOL_NAME)
+TF_VAR_node_pool_replicas ?= $(NODEPOOL_REPLICAS)
+TF_VAR_node_pool_vm_size ?= $(NODEPOOL_VM_SIZE)
+TF_VAR_node_pool_version ?= $(NODEPOOL_VERSION)
+TF_VAR_node_pool_channel ?= $(NODEPOOL_CHANNEL)
+
+ifneq ($(strip $(API_VISIBILITY)),)
+TF_VAR_api_visibility ?= $(API_VISIBILITY)
+export TF_VAR_api_visibility
+endif
+
+export TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_name \
+	TF_VAR_vnet_name TF_VAR_subnet_name TF_VAR_vnet_integration_subnet_name TF_VAR_nsg_name \
+	TF_VAR_managed_resource_group_name TF_VAR_cluster_version TF_VAR_cluster_channel \
+	TF_VAR_node_pool_name TF_VAR_node_pool_replicas TF_VAR_node_pool_vm_size \
+	TF_VAR_node_pool_version TF_VAR_node_pool_channel
 
 .PHONY: help fmt lint test bootstrap init plan apply cluster nodepool all \
 	kubeconfig revoke-credentials versions external-auth external-auth-delete destroy
@@ -52,16 +71,14 @@ init: ## Terraform init
 plan: init ## Terraform plan
 	terraform -chdir=$(TF_DIR) plan
 
-apply: init ## Terraform apply (prerequisites)
+apply: init ## Terraform apply (prereqs + cluster + default node pool)
 	terraform -chdir=$(TF_DIR) apply -auto-approve
 
-cluster: bootstrap ## Create or show cluster (idempotent)
-	bash $(SCRIPTS)/cluster.sh create
+cluster: apply ## Create cluster via Terraform (alias of apply)
 
-nodepool: bootstrap ## Create default node pool (idempotent)
-	bash $(SCRIPTS)/nodepool.sh create
+nodepool: apply ## Create default node pool via Terraform (alias of apply)
 
-all: bootstrap apply cluster nodepool ## Full deploy: prereqs + cluster + nodepool
+all: bootstrap apply ## Full deploy: prereqs + cluster + default nodepool
 	@echo "Deploy complete. Run: make kubeconfig"
 
 kubeconfig: bootstrap ## Request admin kubeconfig
@@ -79,8 +96,6 @@ external-auth: bootstrap kubeconfig ## Configure Entra external auth + console
 external-auth-delete: bootstrap ## Remove external auth and Entra app
 	bash $(SCRIPTS)/external-auth.sh delete
 
-destroy: bootstrap ## Tear down cluster, node pools, and terraform prereqs
+destroy: bootstrap init ## Tear down: state-rm last pool then terraform destroy (OCPBUGS-86702)
 	-bash $(SCRIPTS)/external-auth.sh delete
-	-bash $(SCRIPTS)/nodepool.sh delete
-	-bash $(SCRIPTS)/cluster.sh delete
-	terraform -chdir=$(TF_DIR) destroy -auto-approve
+	bash $(SCRIPTS)/destroy.sh

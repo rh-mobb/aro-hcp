@@ -106,6 +106,37 @@ locals {
     dp_image_registry        = azurerm_user_assigned_identity.dp_image_registry
   }
 
+  control_plane_operators = {
+    "cluster-api-azure"        = azurerm_user_assigned_identity.cluster_api_azure.id
+    "control-plane"            = azurerm_user_assigned_identity.control_plane.id
+    "cloud-controller-manager" = azurerm_user_assigned_identity.cloud_controller_manager.id
+    "ingress"                  = azurerm_user_assigned_identity.ingress.id
+    "disk-csi-driver"          = azurerm_user_assigned_identity.disk_csi_driver.id
+    "file-csi-driver"          = azurerm_user_assigned_identity.file_csi_driver.id
+    "image-registry"           = azurerm_user_assigned_identity.image_registry.id
+    "cloud-network-config"     = azurerm_user_assigned_identity.cloud_network_config.id
+    "kms"                      = azurerm_user_assigned_identity.kms.id
+  }
+
+  data_plane_operators = {
+    "disk-csi-driver" = azurerm_user_assigned_identity.dp_disk_csi_driver.id
+    "file-csi-driver" = azurerm_user_assigned_identity.dp_file_csi_driver.id
+    "image-registry"  = azurerm_user_assigned_identity.dp_image_registry.id
+  }
+
+  cluster_identity_ids = toset([
+    azurerm_user_assigned_identity.service.id,
+    azurerm_user_assigned_identity.cluster_api_azure.id,
+    azurerm_user_assigned_identity.control_plane.id,
+    azurerm_user_assigned_identity.cloud_controller_manager.id,
+    azurerm_user_assigned_identity.ingress.id,
+    azurerm_user_assigned_identity.disk_csi_driver.id,
+    azurerm_user_assigned_identity.file_csi_driver.id,
+    azurerm_user_assigned_identity.image_registry.id,
+    azurerm_user_assigned_identity.cloud_network_config.id,
+    azurerm_user_assigned_identity.kms.id,
+  ])
+
   scopes = {
     vnet      = azurerm_virtual_network.this.id
     nsg       = azurerm_network_security_group.this.id

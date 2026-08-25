@@ -4,7 +4,7 @@ Instructions for AI agents working in this repository.
 
 ## What this repo is
 
-Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 managed identities, RBAC). Bash scripts wrap `az aro hcp` for cluster lifecycle operations.
+Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 managed identities, RBAC) and the HCP cluster plus default node pool via AzAPI. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
 
 This is **not** the Azure/ARO-HCP service codebase. Do not refactor `references/ARO-HCP/` or `references/bennerv-ARO-HCP/` (gitignored clones).
 
@@ -19,7 +19,7 @@ When sources disagree:
 
 ## Hard rules
 
-- **Do not** create the cluster via Terraform `local-exec`.
+- **Do not** create the cluster via Terraform `local-exec` (AzAPI `azapi_resource` is the cluster path).
 - **Do not** copy subnet-scoped CAPI/CCM/ingress RBAC from older Bicep.
 - **`make` is the interface:** run `make fmt lint test` before claiming work is done.
 - **Docs and changelog:** keep [`docs/architecture.md`](docs/architecture.md) in sync with code; update [`CHANGELOG.md`](CHANGELOG.md) only at commit time (see below).
@@ -30,8 +30,8 @@ When sources disagree:
 
 | Path | Purpose |
 |------|---------|
-| `terraform/` | Azure prereqs (RG, network, KV, 13 identities) |
-| `scripts/` | Idempotent `az aro hcp` wrappers |
+| `terraform/` | Azure prereqs + HCP cluster and default node pool (AzAPI) |
+| `scripts/` | Idempotent wrappers: credentials, external-auth, extra node pools, destroy |
 | `config/cluster.env` | Local config (copy from `.example`) |
 | `docs/architecture.md` | Resultant resources, permissions, architecture diagrams |
 | `CHANGELOG.md` | Commit-scoped operator-visible history (not a work journal) |
@@ -41,15 +41,15 @@ When sources disagree:
 
 ```bash
 cp config/cluster.env.example config/cluster.env   # edit values
-make all                                           # bootstrap → apply → cluster → nodepool
+make all                                           # bootstrap → terraform apply (cluster + node pool)
 make kubeconfig                                    # admin creds (24h TTL)
 make external-auth                                 # optional Entra + console
-make destroy                                       # reverse teardown
+make destroy                                       # reverse teardown (state-rm last pool, then terraform destroy)
 ```
 
 ## Preview API
 
-Targets `2026-06-30-preview` via `az aro hcp`. Argument names may change. AzAPI migration path is documented in README.
+Targets `2026-06-30-preview` via AzAPI (`hcpOpenShiftClusters` / `nodePools`) and `az aro hcp` for credentials and external-auth.
 
 ## Documentation
 
