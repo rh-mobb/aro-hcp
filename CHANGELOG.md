@@ -9,10 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Optional Fedora jump VM (`ENABLE_JUMPBOX`) on `10.0.2.0/28` with source-restricted SSH for laptop sshuttle access
 - Initial ARO HCP reference deployment: Terraform prerequisites, `az aro hcp` lifecycle scripts, docs, CI, and bats tests.
 - AzAPI `hcpOpenShiftClusters` and default `nodePools` (`2026-06-30-preview`) in Terraform; `make apply` is the cluster path
 - `scripts/destroy.sh`: state-rm the default node pool (OCPBUGS-86702 last-pool DELETE 409) then `terraform destroy`
-- Optional `API_VISIBILITY` (`Public` / `Private`, create-time) via Terraform
+- Optional `API_VISIBILITY` (`Public` / `Private`, create-time) via Terraform `properties.api.visibility`
 
 ### Changed
 - `make cluster` / `make nodepool` are aliases of `make apply`; CLI create remains for extra pools and fallback

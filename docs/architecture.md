@@ -14,6 +14,8 @@ Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 - [Resultant resources](#resultant-resources)
 - [Customer resource group](#customer-resource-group)
 - [Network](#network)
+- [Jump box (optional)](#jump-box-optional)
+- [Jump box (optional)](#jump-box-optional)
 - [Key Vault and etcd KMS](#key-vault-and-etcd-kms)
 - [Identities and RBAC](#identities-and-rbac)
 - [Cluster ARM resource](#cluster-arm-resource)
@@ -33,7 +35,7 @@ ARO HCP splits the classic ARO model: the control plane is hosted by the service
 | Worker nodes | Customer subscription. NICs attach to the customer worker subnet. Compute objects live in the managed resource group. |
 | Cluster ARM handle | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters` in the **customer** resource group. |
 | Data-plane Azure objects | Managed resource group (`MANAGED_RESOURCE_GROUP`), created and locked by the resource provider. |
-| Minimum workers | 2 replicas of `Standard_D4s_v6` by default (8 vCPU quota). |
+| Minimum workers | 2 replicas of `Standard_D4s_v6` by default (8 vCPU quota). When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`. |
 
 ```mermaid
 flowchart TB
@@ -164,7 +166,7 @@ flowchart TB
 | **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG | Contributor can create RG, network, Key Vault, identities, and the HCP ARM resource. It **cannot** create role assignments. Terraform writes 28 operator assignments plus Key Vault Administrator for the deployer. That needs `Microsoft.Authorization/roleAssignments/write` (User Access Administrator or Owner). |
 | Resource providers registered | At minimum `Microsoft.RedHatOpenShift`. Terraform’s azurerm provider also auto-registers providers it uses (`Microsoft.Network`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.Authorization`). Registering a provider is a **subscription** action; RG-only Contributor cannot do it if the provider is not already registered. |
 | ARO HCP preview **allow-list** | Not an Azure role. The subscription must be enrolled for the preview or cluster create fails regardless of RBAC. |
-| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `LOCATION`. |
+| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `LOCATION`. When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`. |
 
 RG-scoped Owner / Contributor+UAA is enough for this repo because VNet, NSG, Key Vault, identities, and the cluster all live in one RG. A pre-existing VNet in another RG would also need UAA (or Owner) on that VNet.
 
@@ -311,6 +313,10 @@ Terraform resources live under [`terraform/`](../terraform/). Identity count and
 | Subnet | `customer-subnet-1` | `azurerm_subnet.worker` | Worker subnet `10.0.0.0/24`. Private endpoint policies disabled. Default outbound access enabled. |
 | Subnet NSG association | — | `azurerm_subnet_network_security_group_association.worker` | Binds `customer-nsg` to the worker subnet. |
 | Subnet | `customer-vnet-integration-subnet` | `azapi_resource.vnet_integration_subnet` | `10.0.1.0/24`. Delegated to `Microsoft.RedHatOpenShift/hcpOpenShiftClusters`. Created via AzAPI because the azurerm provider cannot express this delegation. |
+| Subnet | `customer-jump-subnet` | `module.jumpbox[].azurerm_subnet.jump` | `10.0.2.0/28`. Optional. Only created when `ENABLE_JUMPBOX=true`. |
+| NSG | `customer-jump-nsg` | `module.jumpbox[].azurerm_network_security_group.jump` | SSH 22 from `JUMP_SSH_SOURCE_PREFIX` only. Only created when `ENABLE_JUMPBOX=true`. |
+| Public IP | `${CLUSTER_NAME}-jump-pip` | `module.jumpbox[].azurerm_public_ip.jump` | Standard static, on the jump NIC. Only created when `ENABLE_JUMPBOX=true`. |
+| Linux VM | `${CLUSTER_NAME}-jump` | `module.jumpbox[].azurerm_linux_virtual_machine.jump` | Fedora Cloud, `Standard_D2s_v6`, admin `fedora`. Only created when `ENABLE_JUMPBOX=true`. |
 | Key Vault | `cust-kv-` + 13-char random | `azurerm_key_vault.this` | RBAC authorization, public network access, soft-delete 7 days, purge protection off. |
 | Key Vault key | `etcd-data-kms-encryption-key` | `azurerm_key_vault_key.etcd_encryption` | RSA 2048; wrap/unwrap/encrypt/decrypt/sign/verify. |
 | User-assigned identity × 13 | `${CLUSTER_NAME}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
@@ -333,20 +339,28 @@ flowchart TB
         subgraph vis["customer-vnet-integration-subnet — 10.0.1.0/24"]
             del["Delegation: Microsoft.RedHatOpenShift/hcpOpenShiftClusters"]
         end
+        subgraph jump["customer-jump-subnet — 10.0.2.0/28"]
+            jumpVm["Fedora jump VM"]
+            jumpPip["Public IP"]
+        end
     end
 
     nsg["customer-nsg"] --> worker
+    jumpNsg["customer-jump-nsg"] --> jump
     hcp["Hosted control plane"] -->|"private connectivity"| vis
-    api["Public API and console"] -.-> hcp
+    api["API Public by default / Private when API_VISIBILITY=Private"] -.-> hcp
     workers["Worker VMs in managed RG"] --> nics
     nics --> pods
+    jumpPip --> jumpVm
 
     classDef net fill:#e7f5ff,stroke:#1971c2,color:#000
     classDef rp fill:#e5dbff,stroke:#5f3dc4,color:#000
     classDef pub fill:#c5f6fa,stroke:#0c8599,color:#000
+    classDef opt fill:#fff4e6,stroke:#e67700,color:#000
     class vnet,worker,vis,nsg,del net
     class hcp,workers rp
-    class api pub
+    class api,jumpPip pub
+    class jump,jumpVm,jumpNsg opt
     class nics,pods net
 ```
 
@@ -355,6 +369,7 @@ flowchart TB
 | `10.0.0.0/16` | VNet / machine CIDR | Terraform `address_prefix`; ARM network default `machineCidr` |
 | `10.0.0.0/24` | Worker subnet | Terraform `subnet_prefix`; cluster `platform.subnetId` |
 | `10.0.1.0/24` | VNet integration subnet | Terraform `vnet_integration_subnet_prefix`; cluster `platform.vnetIntegrationSubnetId` |
+| `10.0.2.0/28` | Jump subnet | Terraform `jump_subnet_prefix`; optional `ENABLE_JUMPBOX` |
 | `10.128.0.0/14` | Pod CIDR | Terraform `pod_cidr` (ARM default) |
 | `172.30.0.0/16` | Service CIDR | Terraform `service_cidr` (ARM default) |
 
@@ -362,9 +377,23 @@ Terraform sets `network.podCidr`, `network.serviceCidr`, `network.machineCidr`, 
 
 **Outbound:** `platform.outboundType` defaults to `LoadBalancer`. The load balancer is created in the managed resource group.
 
-**API visibility:** public (`properties.api.visibility: Public`). Console URL is filled by the service after provision (`properties.console.url`).
+**API visibility:** `Public` by default. Set `API_VISIBILITY=Private` in `cluster.env` (create-time, immutable). Ingress/`*.apps` stay public. Private kube-apiserver requires a path into the VNet (this repo’s jump + sshuttle, or your own). `platform.outboundType` remains `LoadBalancer` (outbound public IP in the managed RG still exists).
 
 **VNet integration subnet** is required for hosted-control-plane private connectivity into the customer VNet. It must remain delegated; do not place worker NICs on it.
+
+### Jump box (optional)
+
+Independent of API visibility. When `ENABLE_JUMPBOX=true`, Terraform module [`terraform/modules/jumpbox`](../terraform/modules/jumpbox) creates a Fedora Cloud VM on `customer-jump-subnet` (`10.0.2.0/28`) with a Standard public IP and NSG allowing SSH 22 only from `JUMP_SSH_SOURCE_PREFIX`.
+
+1. `make jump-key` — writes gitignored `config/jump` + `config/jump.pub` (plan/apply require the `.pub` when jump is on).
+2. Set `ENABLE_JUMPBOX=true` and `JUMP_SSH_SOURCE_PREFIX` (your `/32`) in `cluster.env`.
+3. `make apply` — provisions subnet, NSG, PIP, NIC, and VM (`Standard_D2s_v6`, admin `fedora`, Trusted Launch). Image default: `/communityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/images/Fedora-Cloud-44-x64/versions/latest`.
+4. `make jump` — prints the sshuttle command (uses `config/jump` and the VNet `address_prefix`). Run with `--dns` so private API DNS resolves on the laptop.
+5. `make kubeconfig` still uses ARM (`requestAdminCredential`); only `oc` / API hostname traffic needs sshuttle when the API is private.
+
+API hostname is `https://api.<id>.<region>.aroapp-hcp.io:443`. sshuttle `--dns` is not enough on its own: after kubeconfig, copy the private A record from the managed RG zone `hypershift.local` (`api.<cluster-id>`) into a customer-RG Private DNS zone named `<id>.<region>.aroapp-hcp.io` (record `api` → that IP), VNet-linked with registration disabled.
+
+Quota: **+2 vCPU** of `Standard_D2s_v6` in `LOCATION` when the jump is enabled.
 
 ## Key Vault and etcd KMS
 
@@ -582,7 +611,7 @@ ARM properties always set (not left to RP defaults):
 | `network.serviceCidr` | `172.30.0.0/16` |
 | `network.machineCidr` | `10.0.0.0/16` |
 | `network.hostPrefix` | `23` |
-| `api.visibility` | `Public` |
+| `api.visibility` | `Public` unless `API_VISIBILITY=Private` |
 | `platform.outboundType` | `LoadBalancer` |
 | `clusterImageRegistry.state` | `Enabled` |
 
@@ -762,8 +791,10 @@ flowchart TB
 |------|------|
 | [`terraform/`](../terraform/) | Prerequisites, cluster, default node pool |
 | [`terraform/cluster.tf`](../terraform/cluster.tf) | AzAPI `hcpOpenShiftClusters` + `nodePools` |
+| [`terraform/jumpbox.tf`](../terraform/jumpbox.tf) | Optional Fedora jump VM (`ENABLE_JUMPBOX`) |
 | [`scripts/destroy.sh`](../scripts/destroy.sh) | State-rm last pool then terraform destroy |
 | [`scripts/cluster.sh`](../scripts/cluster.sh) | Optional CLI cluster show/update/delete |
+| [`scripts/jump.sh`](../scripts/jump.sh) | Jump SSH keygen and sshuttle command |
 | [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Extra node pool lifecycle |
 | [`scripts/credentials.sh`](../scripts/credentials.sh) | Admin kubeconfig |
 | [`scripts/external-auth.sh`](../scripts/external-auth.sh) | Entra + external-auth |

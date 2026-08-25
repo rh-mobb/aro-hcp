@@ -29,7 +29,7 @@ Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OC
 - Azure subscription **allow-listed** for ARO HCP preview
 - **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG (UAA is required: Terraform creates role assignments)
 - **`make external-auth` only:** permission to create an Entra **app registration** (and client secret). Application Administrator is **not** always required — see [Operator permissions](docs/architecture.md#operator-permissions)
-- Tools: Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20` (for external-auth), optional `shellcheck`, `shfmt`, `tflint`, `bats`, `pre-commit`
+- Tools: Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20` (for external-auth), optional `sshuttle` (private API via jump), optional `shellcheck`, `shfmt`, `tflint`, `bats`, `pre-commit`
 
 Register resource providers (done by Terraform by default):
 
@@ -43,7 +43,7 @@ az provider register --namespace Microsoft.RedHatOpenShift --wait
 
 ### Quota
 
-At least **8 vCPU** of your worker VM SKU in the target region (default `Standard_D4s_v6` × 2 replicas = 8 vCPU). Add more if creating additional node pools.
+At least **8 vCPU** of your worker VM SKU in the target region (default `Standard_D4s_v6` × 2 replicas = 8 vCPU). Add more if creating additional node pools. When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`.
 
 ## Quick start
 
@@ -70,6 +70,8 @@ make external-auth       # Entra + console (needed if the console shows "Applica
 | `make kubeconfig` | Admin kubeconfig → `.kube/config` |
 | `make revoke-credentials` | Revoke admin creds |
 | `make versions` | List OpenShift versions for region |
+| `make jump-key` | Generate `config/jump` + `config/jump.pub` for the optional jump VM |
+| `make jump` | Print sshuttle command for the jump VM |
 | `make external-auth` | Entra app + external-auth + console secret |
 | `make external-auth-delete` | Remove external-auth |
 | `make destroy` | Teardown (external-auth → state-rm last pool → terraform destroy) |
@@ -77,6 +79,15 @@ make external-auth       # Entra + console (needed if the console shows "Applica
 ## Configuration
 
 Copy [`config/cluster.env.example`](config/cluster.env.example) to `config/cluster.env`. Scripts and Make read this file; Terraform vars are passed via `TF_VAR_*` from the Makefile.
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `API_VISIBILITY` | `Public` | Create-time only: `Public` or `Private`. Ingress stays public. |
+| `ENABLE_JUMPBOX` | `false` | When `true`, Terraform creates the Fedora jump VM. |
+| `JUMP_SSH_SOURCE_PREFIX` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
+| `JUMP_SSH_PUBLIC_KEY_PATH` | `config/jump.pub` | Public key path; create with `make jump-key`. |
+
+When `ENABLE_JUMPBOX=true`, `make plan` / `make apply` require `config/jump.pub` (`make jump-key` first).
 
 ## Git hygiene
 
@@ -122,6 +133,9 @@ Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/im
 | Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make external-auth` |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
+| `oc` cannot reach API hostname | `API_VISIBILITY=Private` without VNet path or API DNS | `make jump` and start sshuttle; add customer Private DNS for `api.<id>.<region>.aroapp-hcp.io` (see architecture). ARM `make kubeconfig` still works |
+| plan/apply: missing config/jump.pub | Jump enabled without a key | `make jump-key` |
+| Jump SSH timeout | Source IP not in `JUMP_SSH_SOURCE_PREFIX` | Set prefix to your /32 and re-apply |
 
 ## Known issues
 
