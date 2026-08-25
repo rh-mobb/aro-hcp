@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Mock terraform for bats tests.
+set -euo pipefail
+
+if [[ "${1:-}" == "-chdir" ]]; then
+  shift 2
+fi
+
+sub="${1:-}"
+shift || true
+
+case "${sub}" in
+  output)
+    flag="${1:-}"
+    name="${2:-}"
+    if [[ "${flag}" == "-json" ]]; then
+      cat <<'JSON'
+{
+  "identity_ids": {
+    "value": {
+      "service": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/svc",
+      "cluster_api_azure": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/capi",
+      "control_plane": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cp",
+      "cloud_controller_manager": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ccm",
+      "ingress": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ingress",
+      "disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/disk",
+      "file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/file",
+      "image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/image",
+      "cloud_network_config": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cloudnet",
+      "kms": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kms",
+      "dp_disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpdisk",
+      "dp_file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpfile",
+      "dp_image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpimage"
+    }
+  }
+}
+JSON
+    elif [[ "${flag}" == "-raw" ]]; then
+      case "${name}" in
+        subnet_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/worker" ;;
+        vnet_integration_subnet_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/integration" ;;
+        nsg_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg" ;;
+        key_vault_name) echo "cust-kv-test" ;;
+        etcd_key_version) echo "abc123" ;;
+        *) echo "mock" ;;
+      esac
+    fi
+    ;;
+  *)
+    echo "mock terraform: ${sub}" >&2
+    exit 0
+    ;;
+esac

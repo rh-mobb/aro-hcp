@@ -1,0 +1,3 @@
+cluster_name       = "my-cluster"
+resource_group_name = "my-cluster-rg"
+location           = "uksouth"

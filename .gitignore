@@ -1,0 +1,40 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.lock.info
+
+# Local config and secrets
+config/cluster.env
+*.tfvars
+!*.tfvars.example
+
+# Kubeconfig and CLI artifacts
+.kube/
+*.kubeconfig
+kubeconfig
+*.whl
+
+# Entra / external-auth generated files
+manifest.json
+.external-auth/
+
+# Reference clones (local source material)
+references/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+.cursor/
+.history/
+*.swp
+*.swo
+
+# Test artifacts
+tests/bats/tmp/

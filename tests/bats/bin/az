@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Mock az CLI for bats tests.
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+case "${cmd}" in
+  account)
+    if [[ "${1:-}" == "show" ]]; then
+      echo '{"id":"00000000-0000-0000-0000-000000000001","tenantId":"00000000-0000-0000-0000-000000000002"}'
+    fi
+    ;;
+  aro)
+    sub="${1:-}"
+    shift || true
+    if [[ "${sub}" == "hcp" ]]; then
+      hcp_cmd="${1:-}"
+      shift || true
+      case "${hcp_cmd}" in
+        cluster)
+          action="${1:-}"
+          case "${action}" in
+            show)
+              if [[ "${AZ_CLUSTER_EXISTS:-1}" == "0" ]]; then
+                echo "ERROR: not found" >&2
+                exit 3
+              fi
+              echo '{"name":"test-cluster","properties":{"provisioningState":"Succeeded"}}'
+              ;;
+            create) echo "created" ;;
+            delete) echo "deleted" ;;
+            list) echo "[]" ;;
+            request-credential) echo "merged" ;;
+            revoke-credential) echo "revoked" ;;
+            nodepool)
+              np_action="${1:-}"
+              case "${np_action}" in
+                show)
+                  echo '{"name":"np-1"}'
+                  ;;
+                create) echo "created" ;;
+                delete) echo "deleted" ;;
+                list) echo "[]" ;;
+              esac
+              ;;
+            external-auth)
+              ea_action="${1:-}"
+              case "${ea_action}" in
+                show) echo '{"name":"entra"}' ;;
+                create) echo "created" ;;
+                delete) echo "deleted" ;;
+              esac
+              ;;
+          esac
+          ;;
+        get-versions)
+          echo '[{"Name":"4.20.29","ChannelGroup":"candidate"}]'
+          ;;
+      esac
+    fi
+    ;;
+  version)
+    echo '{"azure-cli":"2.67.0"}'
+    ;;
+  *)
+    echo "mock az: unsupported ${cmd} $*" >&2
+    exit 1
+    ;;
+esac
