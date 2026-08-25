@@ -36,7 +36,7 @@ lint: ## Run linters (terraform validate/tflint, shellcheck)
 	terraform -chdir=$(TF_DIR) init -backend=false -input=false
 	terraform -chdir=$(TF_DIR) validate
 	@command -v tflint >/dev/null && (cd $(TF_DIR) && tflint --init && tflint) || echo "tflint not installed; skipping"
-	@command -v shellcheck >/dev/null && shellcheck $(SCRIPTS)/*.sh || echo "shellcheck not installed; skipping"
+	@command -v shellcheck >/dev/null && (cd $(SCRIPTS) && shellcheck --external-sources *.sh) || echo "shellcheck not installed; skipping"
 	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci -bn $(SCRIPTS) || true
 
 test: lint ## Run unit tests (terraform test + bats)
