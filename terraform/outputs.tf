@@ -90,3 +90,15 @@ output "console_url" {
   description = "OpenShift console URL when reported by the HCP API."
   value       = try(azapi_resource.hcp_cluster.output.properties.console.url, null)
 }
+
+output "jump_public_ip" {
+  value = var.enable_jumpbox ? module.jumpbox[0].public_ip : null
+}
+
+output "jump_ssh_user" {
+  value = var.enable_jumpbox ? module.jumpbox[0].ssh_user : null
+}
+
+output "jump_sshuttle_command" {
+  value = var.enable_jumpbox ? module.jumpbox[0].sshuttle_command : null
+}

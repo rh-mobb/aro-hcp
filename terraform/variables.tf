@@ -56,6 +56,30 @@ variable "vnet_integration_subnet_prefix" {
   default     = "10.0.1.0/24"
 }
 
+variable "jump_subnet_prefix" {
+  description = "Dedicated jump box subnet prefix."
+  type        = string
+  default     = "10.0.2.0/28"
+}
+
+variable "enable_jumpbox" {
+  description = "Create a Fedora jump VM with a public IP for sshuttle."
+  type        = bool
+  default     = false
+}
+
+variable "jump_ssh_source_prefix" {
+  description = "CIDR allowed to SSH to the jump VM. Required when enable_jumpbox is true."
+  type        = string
+  default     = ""
+}
+
+variable "jump_ssh_public_key" {
+  description = "OpenSSH public key for the jump VM. Required when enable_jumpbox is true. Private key stays on the laptop."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags applied to all resources."
   type        = map(string)
