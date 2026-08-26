@@ -27,6 +27,9 @@ manifest.json
 # Reference clones (local source material)
 references/
 
+# Superpowers plans/specs (local agent artifacts)
+docs/superpowers/
+
 # OS / editor
 .DS_Store
 .idea/

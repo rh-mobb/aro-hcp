@@ -686,7 +686,7 @@ flowchart TB
    - confidential console client + public CLI client
 6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret).
 
-Without external-auth, the OpenShift console ClusterOperator is typically degraded / HTTP 503.
+Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make external-auth`.
 
 Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Those create in-cluster `ClusterRoleBinding` objects (`entra-cluster-admin`), not Azure RBAC.
 

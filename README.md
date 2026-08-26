@@ -54,7 +54,7 @@ cp config/cluster.env.example config/cluster.env
 make bootstrap
 make all                 # terraform apply: prereqs + cluster + default nodepool (~30-60 min)
 make kubeconfig          # admin creds (24h TTL)
-make external-auth       # optional Entra + console
+make external-auth       # Entra + console (needed if the console shows "Application is not available")
 ```
 
 ## Makefile targets
@@ -119,7 +119,7 @@ Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/im
 | Credential expired | 24h TTL | `make kubeconfig` again |
 | `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [permissions](docs/architecture.md#operator-permissions) |
 | AADSTS65001 consent error | User consent disabled | Admin consent for Azure CLI Graph scopes and/or the OIDC app |
-| Console 503 / degraded CO | No external-auth | `make external-auth` |
+| Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make external-auth` |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
 
