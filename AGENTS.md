@@ -60,7 +60,7 @@ Apply is **30–60+ minutes**. Destroy is irreversible for the customer RG. Do n
 
 1. **Azure identity.** `az account show` — confirm subscription name/id and user. If missing or unexpected, stop and ask.
 2. **`config/cluster.env`.** Must exist (copy from `.example`). Treat it as the intended names, region, and versions. Never commit it.
-3. **`TF_VAR_*` overrides — mandatory.** The Makefile assigns with `?=`, so an exported `TF_VAR_*` **wins over** `cluster.env`. Scripts (`kubeconfig`, `external-auth`, CLI helpers) **source `cluster.env`**, so they ignore `TF_VAR_*`. A leftover `TF_VAR_cluster_name` from `terraform test`, a prior shell, or the agent environment will create a cluster whose name does not match `CLUSTER_NAME`, and later `make kubeconfig` will fail.
+3. **`TF_VAR_*` overrides — mandatory.** Make exports `cluster.env` into `TF_VAR_*` only when the value is non-empty (`:=`), so empty CI env does not override Terraform defaults. Scripts (`kubeconfig`, `external-auth`, CLI helpers) **source `cluster.env`** and ignore `TF_VAR_*`. Leftover `TF_VAR_*` that Make does **not** map (CIDRs, disk size, etc.) still reach Terraform. A mismatch between unmapped `TF_VAR_*` and `cluster.env` can still surprise apply. `make test` unsets the mapped `TF_VAR_*` so unit tests do not depend on `cluster.env`.
 
    List them:
 

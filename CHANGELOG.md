@@ -22,3 +22,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - `make external-auth` reads the Entra client secret on jq 1.7 (`values[0]` no longer works)
+- `make test` without `cluster.env` no longer exports empty `TF_VAR_*` that override Terraform defaults (CI)

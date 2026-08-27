@@ -45,3 +45,15 @@ EOF
   [[ "$output" == *"azurerm_subnet.worker"* ]]
   [[ "$output" == *"azurerm_subnet_network_security_group_association.worker"* ]]
 }
+
+@test "make test unsets TF_VAR exports so CI without cluster.env uses terraform defaults" {
+  local mk="${BATS_TEST_DIRNAME}/../../Makefile"
+  run grep -A5 '^TF_VARS_TO_UNSET' "${mk}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"TF_VAR_node_pool_replicas"* ]]
+  [[ "$output" == *"TF_VAR_vnet_name"* ]]
+  run grep -A4 '^test:' "${mk}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"unset"* ]]
+  [[ "$output" == *"TF_VARS_TO_UNSET"* ]]
+}
