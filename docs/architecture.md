@@ -15,7 +15,6 @@ Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 - [Customer resource group](#customer-resource-group)
 - [Network](#network)
 - [Jump box (optional)](#jump-box-optional)
-- [Jump box (optional)](#jump-box-optional)
 - [Key Vault and etcd KMS](#key-vault-and-etcd-kms)
 - [Identities and RBAC](#identities-and-rbac)
 - [Cluster ARM resource](#cluster-arm-resource)

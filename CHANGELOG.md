@@ -8,9 +8,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-- Isolate `make test` from jumpbox `TF_VAR_*` and read `jump.pub` only during `plan`/`apply`
-
 ### Added
 - Optional Fedora jump VM (`ENABLE_JUMPBOX`) on `10.0.2.0/28` with source-restricted SSH for laptop sshuttle access
 - Initial ARO HCP reference deployment: Terraform prerequisites, `az aro hcp` lifecycle scripts, docs, CI, and bats tests.
@@ -27,3 +24,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - `make external-auth` reads the Entra client secret on jq 1.7 (`values[0]` no longer works)
 - `make test` without `cluster.env` no longer exports empty `TF_VAR_*` that override Terraform defaults (CI)
+- Isolate `make test` from jumpbox `TF_VAR_*` and read `jump.pub` only during `plan`/`apply`

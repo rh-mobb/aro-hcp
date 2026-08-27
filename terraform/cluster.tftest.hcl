@@ -15,6 +15,7 @@ variables {
   cluster_name        = "test-cluster"
   resource_group_name = "test-rg"
   location            = "uksouth"
+  enable_jumpbox      = false
 }
 
 run "hcp_cluster_uses_preview_api" {
@@ -51,5 +52,27 @@ run "node_pool_is_cluster_child" {
   assert {
     condition     = azapi_resource.node_pool.name == var.node_pool_name
     error_message = "Default node pool name must come from node_pool_name."
+  }
+}
+
+run "hcp_cluster_api_visibility_defaults_public" {
+  command = plan
+
+  assert {
+    condition     = azapi_resource.hcp_cluster.body.properties.api.visibility == "Public"
+    error_message = "Cluster API visibility must default to Public."
+  }
+}
+
+run "hcp_cluster_api_visibility_private" {
+  command = plan
+
+  variables {
+    api_visibility = "Private"
+  }
+
+  assert {
+    condition     = azapi_resource.hcp_cluster.body.properties.api.visibility == "Private"
+    error_message = "API_VISIBILITY=Private must set properties.api.visibility."
   }
 }
