@@ -65,3 +65,28 @@ output "role_assignment_specs" {
   description = "Expected role assignment specs for testing."
   value       = local.assignment_specs
 }
+
+output "cluster_id" {
+  description = "Azure resource ID of the HCP cluster."
+  value       = azapi_resource.hcp_cluster.id
+}
+
+output "node_pool_id" {
+  description = "Azure resource ID of the default node pool."
+  value       = azapi_resource.node_pool.id
+}
+
+output "managed_resource_group_name" {
+  description = "Managed resource group name for the HCP cluster."
+  value       = local.managed_resource_group_name
+}
+
+output "api_url" {
+  description = "Kubernetes API URL when reported by the HCP API."
+  value       = try(azapi_resource.hcp_cluster.output.properties.api.url, null)
+}
+
+output "console_url" {
+  description = "OpenShift console URL when reported by the HCP API."
+  value       = try(azapi_resource.hcp_cluster.output.properties.console.url, null)
+}

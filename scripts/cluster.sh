@@ -38,6 +38,7 @@ build_identity_args() {
 }
 
 cmd_create() {
+  log "WARN: the default cluster is Terraform-managed; prefer make apply. CLI create is a fallback."
   if cluster_exists; then
     log "Cluster ${CLUSTER_NAME} already exists; skipping create"
     return 0

@@ -1,6 +1,6 @@
 # ARO HCP Reference Deployment
 
-Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform for Azure prerequisites and idempotent bash scripts wrapping `az aro hcp`.
+Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI) for Azure prerequisites, the HCP cluster, and the default node pool. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
 
 Based on [bennerv/ARO-HCP 0.0.2](https://github.com/bennerv/ARO-HCP/releases/tag/0.0.2) (`2026-06-30-preview` API).
 
@@ -12,19 +12,17 @@ Detailed resource inventory, RBAC scopes, CIDRs, and diagrams: **[`docs/architec
 
 ```text
 make all
-  ├── bootstrap.sh          # az aro hcp CLI extension
-  ├── terraform apply       # RG, network, Key Vault, 13 identities, RBAC
-  ├── cluster.sh create     # az aro hcp cluster create
-  └── nodepool.sh create    # default worker node pool
+  ├── bootstrap.sh          # az aro hcp CLI extension (credentials / extra pools)
+  └── terraform apply       # RG, network, Key Vault, 13 identities, RBAC, cluster, default node pool
 ```
 
 | Layer | Tool | Resources |
 |-------|------|-----------|
-| Prerequisites | Terraform (azurerm + azapi) | RG, NSG, VNet, subnets, Key Vault, etcd KMS key, 13 MIs, RBAC |
-| Cluster API | Bash + `az aro hcp` | Cluster, node pools, credentials, external-auth |
+| Prerequisites + cluster | Terraform (azurerm + azapi) | RG, NSG, VNet, subnets, Key Vault, etcd KMS key, 13 MIs, RBAC, `hcpOpenShiftClusters`, default `nodePools` |
+| Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, external-auth |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
-**AzAPI follow-up:** cluster and node pools can move to `azapi_resource` (`Microsoft.RedHatOpenShift/hcpOpenShiftClusters@2026-06-30-preview`) for full Terraform lifecycle. Scripts are intentionally first-class today.
+Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `NAME=np-2 bash scripts/nodepool.sh create`.
 
 ## Prerequisites
 
@@ -54,9 +52,9 @@ cp config/cluster.env.example config/cluster.env
 # Edit LOCATION, CLUSTER_NAME, RESOURCE_GROUP, versions
 
 make bootstrap
-make all                 # apply + cluster + default nodepool (~30-60 min)
+make all                 # terraform apply: prereqs + cluster + default nodepool (~30-60 min)
 make kubeconfig          # admin creds (24h TTL)
-make external-auth       # optional Entra + console
+make external-auth       # Entra + console (needed if the console shows "Application is not available")
 ```
 
 ## Makefile targets
@@ -66,15 +64,15 @@ make external-auth       # optional Entra + console
 | `make help` | List targets |
 | `make fmt` / `lint` / `test` | Format, lint, test |
 | `make bootstrap` | Install `az aro hcp` extension |
-| `make init` / `plan` / `apply` | Terraform prerequisites |
-| `make cluster` / `nodepool` | Idempotent HCP create |
+| `make init` / `plan` / `apply` | Terraform: prereqs + cluster + default node pool |
+| `make cluster` / `nodepool` | Aliases of `make apply` |
 | `make all` | Full deploy to usable cluster |
 | `make kubeconfig` | Admin kubeconfig → `.kube/config` |
 | `make revoke-credentials` | Revoke admin creds |
 | `make versions` | List OpenShift versions for region |
 | `make external-auth` | Entra app + external-auth + console secret |
 | `make external-auth-delete` | Remove external-auth |
-| `make destroy` | Teardown (external-auth → nodepool → cluster → terraform) |
+| `make destroy` | Teardown (external-auth → state-rm last pool → terraform destroy) |
 
 ## Configuration
 
@@ -100,8 +98,8 @@ make fmt lint test       # before every commit
 | Install extension | `make bootstrap` |
 | Register RP / create RG | `terraform apply` |
 | Network + KeyVault + identities | `terraform apply` |
-| Cluster create | `scripts/cluster.sh` / `make cluster` |
-| Node pools | `scripts/nodepool.sh` |
+| Cluster create | `terraform apply` (`azapi_resource.hcp_cluster`) |
+| Node pools | Default: Terraform. Extra: `scripts/nodepool.sh` |
 | Credentials | `scripts/credentials.sh` |
 | get-versions | `scripts/versions.sh` |
 | External auth | `scripts/external-auth.sh` |
@@ -114,14 +112,14 @@ Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/im
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `roleAssignments/write` AuthorizationFailed | Missing User Access Administrator | Grant Owner, or Contributor **and** UAA, on the RG/subscription |
+| Last node pool delete 409 | OCPBUGS-86702 | Use `make destroy` (state-rm default pool, then terraform destroy). Do not `terraform destroy` alone. |
 | Cluster create permission error | Wrong RBAC scope on MI | Verify VNet-scoped roles in `terraform/identities.tf` |
 | Credential POST 404 | Cluster not ready | Wait for `provisioningState: Succeeded` |
 | Admin kubeconfig fails | CLI issue | `credentials.sh` falls back to REST async flow |
 | Credential expired | 24h TTL | `make kubeconfig` again |
 | `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [permissions](docs/architecture.md#operator-permissions) |
 | AADSTS65001 consent error | User consent disabled | Admin consent for Azure CLI Graph scopes and/or the OIDC app |
-| Console 503 / degraded CO | No external-auth | `make external-auth` |
+| Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make external-auth` |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
 

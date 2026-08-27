@@ -2,7 +2,7 @@
 
 This document describes the Azure, Entra, and OpenShift resources that result from this repository after `make all` (and optionally `make kubeconfig` / `make external-auth`). Names below use the defaults from [`config/cluster.env.example`](../config/cluster.env.example). Substitute your `cluster.env` values when reading the Azure portal.
 
-This is a **customer-side** reference. Terraform provisions prerequisites; bash wrappers call `az aro hcp` (`2026-06-30-preview`). The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
+This is a **customer-side** reference. Terraform provisions prerequisites, the HCP cluster, and the default node pool via AzAPI (`2026-06-30-preview`). Bash wrappers call `az aro hcp` for credentials, extra node pools, and external-auth. The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
 
 Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 
@@ -57,7 +57,7 @@ flowchart TB
     entra["Microsoft Entra ID"]
 
     operator --> prereqs
-    operator --> armCluster
+    prereqs --> armCluster
     armCluster -->|"create / reconcile"| rp
     rp --> hcp
     rp --> mrg
@@ -73,11 +73,11 @@ flowchart TB
     class entra fillOpt
 ```
 
-Dashed lines are supporting or optional paths, not Terraform-managed resources.
+Dashed lines are supporting or optional paths.
 
 ## Deploy pipeline
 
-`make` is the interface. Cluster and node-pool create are **not** Terraform `local-exec`.
+`make` is the interface. Cluster and default node-pool create are AzAPI resources, **not** Terraform `local-exec`.
 
 ```mermaid
 flowchart TB
@@ -85,8 +85,8 @@ flowchart TB
 
     subgraph allSteps["make all"]
         boot["bootstrap.sh"] --> apply["terraform apply"]
-        apply --> cluster["cluster.sh create"]
-        cluster --> nodepool["nodepool.sh create"]
+        apply --> cluster["azapi_resource.hcp_cluster"]
+        cluster --> nodepool["azapi_resource.node_pool"]
     end
 
     all --> allSteps
@@ -100,8 +100,8 @@ flowchart TB
     classDef fillOpt fill:#fff4e6,stroke:#e67700,color:#000
     classDef fillDestroy fill:#ffe3e3,stroke:#c92a2a,color:#000
     class start fillStart
-    class apply fillTf
-    class boot,cluster,nodepool fillCli
+    class apply,cluster,nodepool fillTf
+    class boot fillCli
     class kube,auth fillOpt
     class destroy fillDestroy
 ```
@@ -109,9 +109,7 @@ flowchart TB
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
 | `make bootstrap` | `scripts/bootstrap.sh` | Installs the `az aro hcp` CLI extension wheel (0.0.2). No Azure resources. |
-| `make apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 29 role assignments. |
-| `make cluster` | `az aro hcp cluster create` | `hcpOpenShiftClusters` in the customer RG; RP creates the managed RG and hosted control plane. |
-| `make nodepool` | `az aro hcp cluster nodepool create` | Child `nodePools/np-1`; RP places worker compute in the managed RG. |
+| `make apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
 | `make kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
 | `make external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
 
@@ -318,10 +316,10 @@ Terraform resources live under [`terraform/`](../terraform/). Identity count and
 | User-assigned identity × 13 | `${CLUSTER_NAME}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
 | Role assignment × 28 | — | `azurerm_role_assignment.this` | Operator RBAC from the 0.0.2 CLI guide. |
 | Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key. |
-| HCP cluster | `my-cluster` | *not Terraform* | Created by `scripts/cluster.sh`. |
-| Node pool | `np-1` | *not Terraform* | Created by `scripts/nodepool.sh`. |
+| HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
+| Node pool | `np-1` | `azapi_resource.node_pool` | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms this resource first. |
 
-This reference **does not** create a private Key Vault, private endpoint, or `privatelink.vaultcore.azure.net` zone. The demo Bicep in `references/` can; this repo sets `--vault-visibility Public`.
+This reference **does not** create a private Key Vault, private endpoint, or `privatelink.vaultcore.azure.net` zone. The demo Bicep in `references/` can; this repo sets etcd KMS `visibility` to `Public`.
 
 ## Network
 
@@ -355,12 +353,12 @@ flowchart TB
 | CIDR | Role | Source |
 |------|------|--------|
 | `10.0.0.0/16` | VNet / machine CIDR | Terraform `address_prefix`; ARM network default `machineCidr` |
-| `10.0.0.0/24` | Worker subnet | Terraform `subnet_prefix`; passed as `--subnet-id` |
-| `10.0.1.0/24` | VNet integration subnet | Terraform `vnet_integration_subnet_prefix`; passed as `--vnet-integration-subnet-id` |
-| `10.128.0.0/14` | Pod CIDR | ARM body default (`networkType: OVNKubernetes`, `hostPrefix: 23`) |
-| `172.30.0.0/16` | Service CIDR | ARM body default |
+| `10.0.0.0/24` | Worker subnet | Terraform `subnet_prefix`; cluster `platform.subnetId` |
+| `10.0.1.0/24` | VNet integration subnet | Terraform `vnet_integration_subnet_prefix`; cluster `platform.vnetIntegrationSubnetId` |
+| `10.128.0.0/14` | Pod CIDR | Terraform `pod_cidr` (ARM default) |
+| `172.30.0.0/16` | Service CIDR | Terraform `service_cidr` (ARM default) |
 
-`cluster.sh` does not pass pod/service CIDRs on the CLI; the resource provider applies the documented ARM defaults from the 0.0.2 / demo Bicep shape.
+Terraform sets `network.podCidr`, `network.serviceCidr`, `network.machineCidr`, and `network.hostPrefix` on the AzAPI cluster body.
 
 **Outbound:** `platform.outboundType` defaults to `LoadBalancer`. The load balancer is created in the managed resource group.
 
@@ -370,14 +368,15 @@ flowchart TB
 
 ## Key Vault and etcd KMS
 
-Cluster create requests customer-managed etcd encryption:
+AzAPI cluster body (`properties.etcd.dataEncryption`):
 
 ```text
---key-management-mode CustomerManaged
---etcd-encryption-type KMS
---kms-vault-name <terraform output key_vault_name>
---vault-visibility Public
---kms-active-key {name:etcd-data-kms-encryption-key,version:<terraform output etcd_key_version>}
+keyManagementMode: CustomerManaged
+encryptionType: KMS
+kms.vaultName: <azurerm_key_vault.this.name>
+kms.visibility: Public
+kms.activeKey.name: etcd-data-kms-encryption-key
+kms.activeKey.version: <azurerm_key_vault_key.etcd_encryption.version>
 ```
 
 The KMS identity (`${CLUSTER_NAME}-kms`) has **Key Vault Crypto User** on the vault. The cluster resource is created only after that assignment exists.
@@ -544,41 +543,37 @@ API version: `2026-06-30-preview`.
 ```mermaid
 sequenceDiagram
     participant Make
-    participant TF as Terraform state
-    participant CLI as az aro hcp
+    participant TF as Terraform
     participant ARM
     participant RP as ARO HCP RP
 
-    Make->>TF: read outputs
-    Note over TF: subnet, VNet integration subnet, NSG, KV name, key version, 13 identity IDs
-    Make->>CLI: cluster create
-    CLI->>ARM: PUT hcpOpenShiftClusters
+    Make->>TF: terraform apply
+    TF->>ARM: PUT hcpOpenShiftClusters@2026-06-30-preview
     ARM->>RP: validated create
     RP-->>ARM: 201 + Azure-AsyncOperation
     Note over RP: managed RG, hosted control plane, DNS
-    ARM-->>CLI: provisioningState Succeeded
+    ARM-->>TF: provisioningState Succeeded
+    TF->>ARM: PUT hcpOpenShiftClusters/.../nodePools/np-1
+    ARM->>RP: node pool create
+    RP-->>ARM: Succeeded
 ```
 
-Flags passed by [`scripts/cluster.sh`](../scripts/cluster.sh):
+AzAPI body in [`terraform/cluster.tf`](../terraform/cluster.tf) (`schema_validation_enabled = false`, create/delete timeouts 120m):
 
-| Flag | Value |
-|------|--------|
-| `--resource-group` | `RESOURCE_GROUP` |
-| `--name` | `CLUSTER_NAME` |
-| `--location` | `LOCATION` |
-| `--version` / `--channel-group` | `CLUSTER_VERSION` / `CLUSTER_CHANNEL` |
-| `--subnet-id` | Terraform `subnet_id` |
-| `--vnet-integration-subnet-id` | Terraform `vnet_integration_subnet_id` |
-| `--nsg` | Terraform `nsg_id` |
-| `--managed-resource-group-name` | `MANAGED_RESOURCE_GROUP` |
-| `--key-management-mode` | `CustomerManaged` |
-| `--etcd-encryption-type` | `KMS` |
-| `--kms-vault-name` / `--kms-active-key` | Terraform Key Vault + key version |
-| `--vault-visibility` | `Public` |
-| `--user-assigned-identities` | Service + 9 CP identity resource IDs |
-| `--operators-authentication` | CP map + DP map + service identity |
+| Property | Value |
+|----------|--------|
+| `name` / `location` | `CLUSTER_NAME` / `LOCATION` |
+| `properties.version.id` / `channelGroup` | `CLUSTER_VERSION` / `CLUSTER_CHANNEL` |
+| `platform.subnetId` | Worker subnet |
+| `platform.vnetIntegrationSubnetId` | AzAPI integration subnet |
+| `platform.networkSecurityGroupId` | Customer NSG |
+| `platform.managedResourceGroup` | `MANAGED_RESOURCE_GROUP` |
+| `platform.outboundType` | `LoadBalancer` |
+| `etcd` KMS | Customer-managed; vault visibility Public |
+| `api.visibility` | `Public` (or `API_VISIBILITY`) |
+| identity + `operatorsAuthentication` | Service + 9 CP identities; DP map; service MI |
 
-ARM defaults applied by the provider when not overridden on the CLI (demo Bicep shape):
+ARM properties always set (not left to RP defaults):
 
 | Property | Default |
 |----------|---------|
@@ -591,9 +586,9 @@ ARM defaults applied by the provider when not overridden on the CLI (demo Bicep 
 | `platform.outboundType` | `LoadBalancer` |
 | `clusterImageRegistry.state` | `Enabled` |
 
-Create is idempotent: if `az aro hcp cluster show` succeeds, `cluster.sh create` skips.
+Create is idempotent: Terraform apply is a no-op when state matches.
 
-Useful read-back fields after `Succeeded`:
+Useful read-back fields after `Succeeded` (Terraform outputs `api_url` / `console_url` from `response_export_values`):
 
 | Field | Meaning |
 |-------|---------|
@@ -618,7 +613,7 @@ Child resource:
 | Version / channel | `4.22.9` / `stable` |
 | Subnet | Cluster `platform.subnetId` (worker subnet) |
 
-The script does not set OS disk size; the provider default applies (demo Bicep used 64 GiB Standard SSD). Extra pools: `NAME=… REPLICAS=… VM_SIZE=… make nodepool`.
+OS disk is 64 GiB Standard SSD (`node_pool_disk_size_gib` / `node_pool_disk_storage_account_type`). Extra pools: `NAME=… REPLICAS=… VM_SIZE=… bash scripts/nodepool.sh create`.
 
 Worker VMs and disks appear in the **managed** RG. Their NICs attach to `customer-subnet-1`.
 
@@ -691,7 +686,7 @@ flowchart TB
    - confidential console client + public CLI client
 6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret).
 
-Without external-auth, the OpenShift console ClusterOperator is typically degraded / HTTP 503.
+Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make external-auth`.
 
 Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Those create in-cluster `ClusterRoleBinding` objects (`entra-cluster-admin`), not Azure RBAC.
 
@@ -718,11 +713,8 @@ sequenceDiagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Prereqs: terraform apply
-    Prereqs --> ClusterCreating: cluster.sh create
-    ClusterCreating --> ClusterReady: provisioningState Succeeded
-    ClusterReady --> NodepoolCreating: nodepool.sh create
-    NodepoolCreating --> Usable: node pool Succeeded
+    [*] --> Creating: terraform apply
+    Creating --> Usable: cluster + node pool Succeeded
     Usable --> Authed: make kubeconfig
     Authed --> ConsoleReady: make external-auth
     Usable --> Destroying: make destroy
@@ -731,23 +723,23 @@ stateDiagram-v2
     Destroying --> [*]
 ```
 
-`make destroy` order (best-effort, prefixed with `-` so a missing resource does not abort):
+`make destroy` order:
 
-1. `external-auth.sh delete` — external-auth resource, console secret, Entra app
-2. `nodepool.sh delete` — default node pool
-3. `cluster.sh delete` — cluster ARM resource; RP deletes the managed RG
-4. `terraform destroy` — customer RG contents including identities, KV, network
+1. `external-auth.sh delete` — external-auth resource, console secret, Entra app (best-effort)
+2. `terraform state rm azapi_resource.node_pool` — OCPBUGS-86702: RP rejects DELETE of the last node pool
+3. `terraform destroy` — cluster ARM delete cascades remaining pools and the managed RG, then customer RG contents (identities, KV, network)
 
-Cluster delete also removes remaining node pools. Terraform destroy of the customer RG while the cluster still exists will fail or orphan the managed RG.
+When OCPBUGS-86702 is fixed and the frontend admission 409 is removed, step 2 can be dropped.
+
+Do not `terraform destroy` the customer RG while the cluster still exists in Azure; that fails or orphans the managed RG. Plain `terraform destroy` without the state-rm also 409s on the last pool.
 
 ```mermaid
 flowchart TB
-    ea["Delete external-auth + Entra app"] --> np["Delete node pool"]
-    np --> cl["Delete cluster — RP deletes managed RG"]
-    cl --> tf["terraform destroy — customer RG"]
+    ea["Delete external-auth + Entra app"] --> rm["state rm default node pool"]
+    rm --> tf["terraform destroy — cluster then customer RG"]
 
     classDef step fill:#ffe3e3,stroke:#c92a2a,color:#000
-    class ea,np,cl,tf step
+    class ea,rm,tf step
 ```
 
 ## Ownership matrix
@@ -755,7 +747,8 @@ flowchart TB
 | Resource | Created by | Destroyed by | Customer-writable |
 |----------|------------|--------------|-------------------|
 | Customer RG, VNet, subnets, NSG, KV, identities, operator RBAC | Terraform | `terraform destroy` | Yes |
-| `hcpOpenShiftClusters` / `nodePools` | `az aro hcp` | `az aro hcp … delete` | Update via CLI/ARM; do not hand-edit RP fields |
+| `hcpOpenShiftClusters` / default `nodePools` | Terraform AzAPI | `make destroy` (state-rm last pool, then destroy) | Update via TF/ARM; do not hand-edit RP fields |
+| Extra `nodePools` | `az aro hcp` | `scripts/nodepool.sh delete` or cluster delete | Via CLI |
 | Managed RG contents | Resource provider / HyperShift | Cluster delete | No (deny assignment) |
 | Hosted control plane | ARO HCP service | Cluster delete | No |
 | Admin kubeconfig | Credential API | Expires (24h) or `revoke-credentials` | Local file only |
@@ -767,9 +760,11 @@ flowchart TB
 
 | Path | Role |
 |------|------|
-| [`terraform/`](../terraform/) | Prerequisite resources |
-| [`scripts/cluster.sh`](../scripts/cluster.sh) | Cluster create/show/update/delete |
-| [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Node pool lifecycle |
+| [`terraform/`](../terraform/) | Prerequisites, cluster, default node pool |
+| [`terraform/cluster.tf`](../terraform/cluster.tf) | AzAPI `hcpOpenShiftClusters` + `nodePools` |
+| [`scripts/destroy.sh`](../scripts/destroy.sh) | State-rm last pool then terraform destroy |
+| [`scripts/cluster.sh`](../scripts/cluster.sh) | Optional CLI cluster show/update/delete |
+| [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Extra node pool lifecycle |
 | [`scripts/credentials.sh`](../scripts/credentials.sh) | Admin kubeconfig |
 | [`scripts/external-auth.sh`](../scripts/external-auth.sh) | Entra + external-auth |
 | [`config/cluster.env.example`](../config/cluster.env.example) | Names and versions |

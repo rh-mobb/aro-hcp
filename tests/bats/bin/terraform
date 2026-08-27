@@ -2,7 +2,9 @@
 # Mock terraform for bats tests.
 set -euo pipefail
 
-if [[ "${1:-}" == "-chdir" ]]; then
+if [[ "${1:-}" == -chdir=* ]]; then
+  shift
+elif [[ "${1:-}" == "-chdir" ]]; then
   shift 2
 fi
 
@@ -47,7 +49,29 @@ JSON
     fi
     ;;
   *)
-    echo "mock terraform: ${sub}" >&2
+    if [[ "${sub}" == "state" ]]; then
+      action="${1:-}"
+      case "${action}" in
+        list)
+          if [[ "${TF_STATE_HAS_CLUSTER:-1}" == "1" ]]; then
+            echo "azapi_resource.hcp_cluster"
+          fi
+          if [[ "${TF_STATE_HAS_NODE_POOL:-1}" == "1" ]]; then
+            echo "azapi_resource.node_pool"
+          fi
+          ;;
+        rm)
+          echo "terraform state rm ${2:-}"
+          ;;
+        *)
+          echo "mock terraform: state ${action}" >&2
+          ;;
+      esac
+    elif [[ "${sub}" == "destroy" ]]; then
+      echo "terraform destroy $*"
+    else
+      echo "mock terraform: ${sub} $*" >&2
+    fi
     exit 0
     ;;
 esac

@@ -14,13 +14,38 @@ include $(CONFIG_FILE)
 export
 endif
 
-TF_VAR_location ?= $(LOCATION)
-TF_VAR_cluster_name ?= $(CLUSTER_NAME)
-TF_VAR_resource_group_name ?= $(RESOURCE_GROUP)
-TF_VAR_vnet_name ?= $(VNET_NAME)
-TF_VAR_subnet_name ?= $(SUBNET_NAME)
-TF_VAR_vnet_integration_subnet_name ?= $(VNET_INTEGRATION_SUBNET_NAME)
-TF_VAR_nsg_name ?= $(NSG_NAME)
+# Export TF_VAR_* only when the Make variable is non-empty. An empty export
+# (CI without cluster.env) overrides Terraform defaults and breaks tests
+# (TF_VAR_node_pool_replicas="" is not a number; TF_VAR_vnet_name="" fails azurerm).
+# := so cluster.env wins over leftover shell TF_VAR_* for Make targets.
+define export_tf_if_set
+ifneq ($$(strip $$($(1))),)
+export TF_VAR_$(2) := $$($(1))
+endif
+endef
+
+$(eval $(call export_tf_if_set,LOCATION,location))
+$(eval $(call export_tf_if_set,CLUSTER_NAME,cluster_name))
+$(eval $(call export_tf_if_set,RESOURCE_GROUP,resource_group_name))
+$(eval $(call export_tf_if_set,VNET_NAME,vnet_name))
+$(eval $(call export_tf_if_set,SUBNET_NAME,subnet_name))
+$(eval $(call export_tf_if_set,VNET_INTEGRATION_SUBNET_NAME,vnet_integration_subnet_name))
+$(eval $(call export_tf_if_set,NSG_NAME,nsg_name))
+$(eval $(call export_tf_if_set,MANAGED_RESOURCE_GROUP,managed_resource_group_name))
+$(eval $(call export_tf_if_set,CLUSTER_VERSION,cluster_version))
+$(eval $(call export_tf_if_set,CLUSTER_CHANNEL,cluster_channel))
+$(eval $(call export_tf_if_set,NODEPOOL_NAME,node_pool_name))
+$(eval $(call export_tf_if_set,NODEPOOL_REPLICAS,node_pool_replicas))
+$(eval $(call export_tf_if_set,NODEPOOL_VM_SIZE,node_pool_vm_size))
+$(eval $(call export_tf_if_set,NODEPOOL_VERSION,node_pool_version))
+$(eval $(call export_tf_if_set,NODEPOOL_CHANNEL,node_pool_channel))
+$(eval $(call export_tf_if_set,API_VISIBILITY,api_visibility))
+
+TF_VARS_TO_UNSET := TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_name \
+	TF_VAR_vnet_name TF_VAR_subnet_name TF_VAR_vnet_integration_subnet_name TF_VAR_nsg_name \
+	TF_VAR_managed_resource_group_name TF_VAR_cluster_version TF_VAR_cluster_channel \
+	TF_VAR_node_pool_name TF_VAR_node_pool_replicas TF_VAR_node_pool_vm_size \
+	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility
 
 .PHONY: help fmt lint test bootstrap init plan apply cluster nodepool all \
 	kubeconfig revoke-credentials versions external-auth external-auth-delete destroy
@@ -40,6 +65,7 @@ lint: ## Run linters (terraform validate/tflint, shellcheck)
 	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci -bn $(SCRIPTS) || true
 
 test: lint ## Run unit tests (terraform test + bats)
+	unset $(TF_VARS_TO_UNSET); \
 	terraform -chdir=$(TF_DIR) test
 	@command -v bats >/dev/null && bats $(ROOT_DIR)/tests/bats || echo "bats not installed; skipping"
 
@@ -52,16 +78,14 @@ init: ## Terraform init
 plan: init ## Terraform plan
 	terraform -chdir=$(TF_DIR) plan
 
-apply: init ## Terraform apply (prerequisites)
+apply: init ## Terraform apply (prereqs + cluster + default node pool)
 	terraform -chdir=$(TF_DIR) apply -auto-approve
 
-cluster: bootstrap ## Create or show cluster (idempotent)
-	bash $(SCRIPTS)/cluster.sh create
+cluster: apply ## Create cluster via Terraform (alias of apply)
 
-nodepool: bootstrap ## Create default node pool (idempotent)
-	bash $(SCRIPTS)/nodepool.sh create
+nodepool: apply ## Create default node pool via Terraform (alias of apply)
 
-all: bootstrap apply cluster nodepool ## Full deploy: prereqs + cluster + nodepool
+all: bootstrap apply ## Full deploy: prereqs + cluster + default nodepool
 	@echo "Deploy complete. Run: make kubeconfig"
 
 kubeconfig: bootstrap ## Request admin kubeconfig
@@ -79,8 +103,6 @@ external-auth: bootstrap kubeconfig ## Configure Entra external auth + console
 external-auth-delete: bootstrap ## Remove external auth and Entra app
 	bash $(SCRIPTS)/external-auth.sh delete
 
-destroy: bootstrap ## Tear down cluster, node pools, and terraform prereqs
+destroy: bootstrap init ## Tear down: state-rm last pool then terraform destroy (OCPBUGS-86702)
 	-bash $(SCRIPTS)/external-auth.sh delete
-	-bash $(SCRIPTS)/nodepool.sh delete
-	-bash $(SCRIPTS)/cluster.sh delete
-	terraform -chdir=$(TF_DIR) destroy -auto-approve
+	bash $(SCRIPTS)/destroy.sh
