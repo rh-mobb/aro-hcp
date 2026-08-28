@@ -1,8 +1,10 @@
 # ARO HCP reference deployment architecture
 
-This document describes the Azure, Entra, and OpenShift resources that result from this repository after `make all` (and optionally `make kubeconfig` / `make external-auth`). Names below use the defaults from [`config/cluster.env.example`](../config/cluster.env.example). Substitute your `cluster.env` values when reading the Azure portal.
+This document describes the Azure, Entra, and OpenShift resources that result from this repository after `make cluster.<name>.apply` (and optionally `make cluster.<name>.kubeconfig` / `make cluster.<name>.external-auth`). Names below use the defaults from [`clusters/public/terraform.tfvars`](../clusters/public/terraform.tfvars). Substitute your `terraform.tfvars` values when reading the Azure portal.
 
 This is a **customer-side** reference. Terraform provisions prerequisites, the HCP cluster, and the default node pool via AzAPI (`2026-06-30-preview`). Bash wrappers call `az aro hcp` for credentials, extra node pools, and external-auth. The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
+
+**Operator guides:** [Documentation site](https://rh-mobb.github.io/aro-hcp/) · [Account prerequisites](prerequisites/account.md) · [Full-stack deployment and per-step permissions](prerequisites/full-stack.md) · [External auth with Entra ID](guides/external-auth-entra-id.md)
 
 Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 
@@ -33,8 +35,8 @@ ARO HCP splits the classic ARO model: the control plane is hosted by the service
 | Control plane | Service-owned management cluster. No control-plane VMs in the customer subscription. |
 | Worker nodes | Customer subscription. NICs attach to the customer worker subnet. Compute objects live in the managed resource group. |
 | Cluster ARM handle | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters` in the **customer** resource group. |
-| Data-plane Azure objects | Managed resource group (`MANAGED_RESOURCE_GROUP`), created and locked by the resource provider. |
-| Minimum workers | 2 replicas of `Standard_D4s_v6` by default (8 vCPU quota). When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`. |
+| Data-plane Azure objects | Managed resource group (`managed_resource_group_name`), created and locked by the resource provider. |
+| Minimum workers | 2 replicas of `Standard_D4s_v6` by default (8 vCPU quota). When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. |
 
 ```mermaid
 flowchart TB
@@ -64,7 +66,7 @@ flowchart TB
     rp --> mrg
     workers --> vnet
     hcp -.->|"VNet integration subnet"| vnet
-    operator -.->|"optional make external-auth"| entra
+    operator -.->|"make cluster.<name>.external-auth"| entra
 
     classDef fillCust fill:#e7f5ff,stroke:#1971c2,color:#000
     classDef fillSvc fill:#e5dbff,stroke:#5f3dc4,color:#000
@@ -82,18 +84,18 @@ Dashed lines are supporting or optional paths.
 
 ```mermaid
 flowchart TB
-    start["cp config/cluster.env.example config/cluster.env"] --> all["make all"]
+    start["cp -r clusters/public clusters/my-cluster"] --> all["make cluster.my-cluster.apply"]
 
-    subgraph allSteps["make all"]
+    subgraph allSteps["make cluster.<name>.apply"]
         boot["bootstrap.sh"] --> apply["terraform apply"]
-        apply --> cluster["azapi_resource.hcp_cluster"]
-        cluster --> nodepool["azapi_resource.node_pool"]
+        apply --> cluster["module.cluster azapi hcp_cluster"]
+        cluster --> nodepool["module.cluster azapi node_pool"]
     end
 
     all --> allSteps
-    allSteps --> kube["make kubeconfig — optional"]
-    kube --> auth["make external-auth — optional"]
-    allSteps --> destroy["make destroy"]
+    allSteps --> kube["make cluster.<name>.kubeconfig — optional"]
+    kube --> auth["make cluster.<name>.external-auth — optional"]
+    allSteps --> destroy["make cluster.<name>.destroy"]
 
     classDef fillStart fill:#d3f9d8,stroke:#2f9e44,color:#000
     classDef fillTf fill:#e7f5ff,stroke:#1971c2,color:#000
@@ -110,13 +112,15 @@ flowchart TB
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
 | `make bootstrap` | `scripts/bootstrap.sh` | Installs the `az aro hcp` CLI extension wheel (0.0.2). No Azure resources. |
-| `make apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
-| `make kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
-| `make external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
+| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
+| `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
+| `make cluster.<name>.external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
 
-`cluster.env` is sourced by Make (`TF_VAR_*`) and by scripts. Terraform does not read the env file directly.
+`make cluster.<name>.plan` / `apply` / `destroy` pass `clusters/<name>/terraform.tfvars` with `-var-file`. Scripts after apply read terraform outputs, then fall back to the same file.
 
 ## Operator permissions
+
+Step-by-step least-privilege tables for every `make cluster.<name>.*` target: **[Full-stack deployment — permissions by step](prerequisites/full-stack.md#permissions-by-deployment-step)**. Entra OIDC detail: **[External auth with Entra ID](guides/external-auth-entra-id.md)**.
 
 Permissions fall into three planes. Azure RBAC on the subscription does **not** grant Microsoft Entra directory rights, and the reverse is also true.
 
@@ -142,8 +146,8 @@ flowchart TB
     op --> rbac
     op --> preview
     op --> quota
-    rbac --> apply["make apply / cluster / nodepool / kubeconfig"]
-    userApps -.->|"tenant allows user app create"| ext["make external-auth"]
+    rbac --> apply["make cluster.<name>.apply / kubeconfig"]
+    userApps -.->|"tenant allows user app create"| ext["make cluster.<name>.external-auth"]
     dirRole -.->|"tenant blocks user app create"| ext
     apply --> adminKube
     adminKube --> ext
@@ -158,18 +162,18 @@ flowchart TB
     class adminKube fillOcp
 ```
 
-### Azure RBAC — `make apply`, `cluster`, `nodepool`, `kubeconfig`
+### Azure RBAC — `make cluster.<name>.apply`, `destroy`, `kubeconfig`
 
 | Requirement | Why |
 |-------------|-----|
 | **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG | Contributor can create RG, network, Key Vault, identities, and the HCP ARM resource. It **cannot** create role assignments. Terraform writes 28 operator assignments plus Key Vault Administrator for the deployer. That needs `Microsoft.Authorization/roleAssignments/write` (User Access Administrator or Owner). |
 | Resource providers registered | At minimum `Microsoft.RedHatOpenShift`. Terraform’s azurerm provider also auto-registers providers it uses (`Microsoft.Network`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.Authorization`). Registering a provider is a **subscription** action; RG-only Contributor cannot do it if the provider is not already registered. |
 | ARO HCP preview **allow-list** | Not an Azure role. The subscription must be enrolled for the preview or cluster create fails regardless of RBAC. |
-| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `LOCATION`. When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`. |
+| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `location`. When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. |
 
 RG-scoped Owner / Contributor+UAA is enough for this repo because VNet, NSG, Key Vault, identities, and the cluster all live in one RG. A pre-existing VNet in another RG would also need UAA (or Owner) on that VNet.
 
-`make kubeconfig` (`requestAdminCredential`) needs Contributor (or higher) on the cluster resource. It does not need Entra admin roles.
+`make cluster.<name>.kubeconfig` (`requestAdminCredential`) needs Contributor (or higher) on the cluster resource. It does not need Entra admin roles.
 
 Typical failure if UAA is missing:
 
@@ -178,7 +182,7 @@ AuthorizationFailed: The client does not have authorization to perform action
 'Microsoft.Authorization/roleAssignments/write'
 ```
 
-### Microsoft Entra ID — `make external-auth`
+### Microsoft Entra ID — `make cluster.<name>.external-auth`
 
 The script calls `az ad app create`, `az ad sp create`, `az ad app update` (redirect URIs + optional `groups` claims), `az ad app credential reset`, and on destroy `az ad app delete`. Those are **directory** operations. Subscription Owner does **not** imply them.
 
@@ -207,7 +211,7 @@ Still required or commonly blocked:
 | First console / `oc login` | Users may see “Permissions requested” for OpenID/`profile`. They can accept if user consent is allowed. If user consent is disabled, an admin must consent to **this** app (openid/profile), which is still not Application Administrator if someone else already created the app. |
 | `scripts/external-auth.sh rbac-group` | Needs the Entra **group object ID** (`GROUP_ID=`). Looking groups up may need Group Reader / Directory Reader. The script also sets `groupMembershipClaims=SecurityGroup` on the app (owner can do this). |
 
-If an admin must create the app on the operator’s behalf: create the app registration, add the operator as **owner**, then the operator can run `make external-auth` (the script reuses `CLIENT_ID` from `.external-auth/state.env`). They still need owner (or a directory role) to run `az ad app credential reset`.
+If an admin must create the app on the operator’s behalf: create the app registration, add the operator as **owner**, then the operator can run `make cluster.<name>.external-auth` (the script reuses `CLIENT_ID` from `.external-auth/state.env`). They still need owner (or a directory role) to run `az ad app credential reset`.
 
 Typical failures:
 
@@ -225,25 +229,32 @@ AADSTS65001: The user or administrator has not consented
 
 ### OpenShift RBAC — console secret and `ClusterRoleBinding`
 
-`make external-auth` applies a secret in `openshift-config` and (optionally) `entra-cluster-admin`. That uses the **24h admin kubeconfig**, not Entra directory roles. Run `make kubeconfig` first.
+`make cluster.<name>.external-auth` applies a secret in `openshift-config` and (optionally) `entra-cluster-admin`. That uses the **24h admin kubeconfig**, not Entra directory roles. Run `make cluster.<name>.kubeconfig` first.
 
 Granting `cluster-admin` to an Entra user or group is OpenShift RBAC (`oc apply`). It does not change Azure or Entra admin roles.
 
 ### Permissions by `make` target
 
-| Target | Azure RBAC | Entra directory | OpenShift |
-|--------|------------|-----------------|-----------|
-| `bootstrap` | None | None | None |
-| `apply` | Contributor + UAA (or Owner); provider register at subscription if needed | None | None |
-| `cluster` / `nodepool` | Contributor (or Owner) on customer RG | None | None |
-| `kubeconfig` / `revoke-credentials` | Contributor on the cluster | None | None |
-| `external-auth` | Contributor on the cluster (to PUT `externalAuths`) | Create/own app registration; see table above | Admin kubeconfig for the console secret |
-| `external-auth-delete` | Contributor on the cluster | Owner or directory role to `az ad app delete` | Admin kubeconfig to delete the secret |
-| `destroy` | Same as apply + cluster delete | Same as external-auth-delete | Same as external-auth-delete |
+Summary — full Azure action list and split-role options: [Full-stack deployment](prerequisites/full-stack.md#permissions-by-deployment-step).
+
+| Target | Azure RBAC (minimum) | Entra directory | OpenShift |
+|--------|----------------------|-----------------|-----------|
+| `make bootstrap` | None | None | None |
+| `make cluster.<name>.jump-key` | None | None | None |
+| `make cluster.<name>.versions` | Reader on subscription | None | None |
+| `make cluster.<name>.init` | None | None | None |
+| `make cluster.<name>.plan` | Reader on subscription + customer RG | None | None |
+| `make cluster.<name>.apply` | Contributor + UAA (or Owner) on customer RG; subscription Contributor once if RPs not registered | None | None |
+| `make cluster.<name>.kubeconfig` / `revoke-credentials` | Contributor on cluster (or RG) | None | None |
+| `make cluster.<name>.external-auth` | Contributor on cluster (`externalAuths` write) | App create + credential reset — see [Entra guide](guides/external-auth-entra-id.md) | Admin kubeconfig (24h) for console secret |
+| `make cluster.<name>.external-auth-delete` | Contributor on cluster | App owner or directory role for `az ad app delete` | Optional admin kubeconfig to delete secret |
+| `make cluster.<name>.jump` | None | None | None |
+| `make cluster.<name>.destroy` | Same as apply | Same as external-auth-delete if cleaning Entra app | Optional admin kubeconfig |
+| `scripts/nodepool.sh` (extra pools) | Contributor on cluster (`nodePools` write) | None | None |
 
 ## Resultant resources
 
-After a successful `make all`, the customer subscription contains two resource groups. Example names:
+After a successful `make cluster.<name>.apply`, the customer subscription contains two resource groups. Example names:
 
 | Resource group | Example name | Created by | Purpose |
 |----------------|--------------|------------|---------|
@@ -254,8 +265,8 @@ After a successful `make all`, the customer subscription contains two resource g
 flowchart TB
     subgraph sub["Customer subscription"]
         subgraph rg["Customer RG — my-cluster-rg"]
-            nsg["NSG — customer-nsg"]
-            vnet["VNet — customer-vnet 10.0.0.0/16"]
+            nsg["NSG — my-cluster-nsg"]
+            vnet["VNet — my-cluster-vnet 10.0.0.0/16"]
             kv["Key Vault — cust-kv-xxxxxxxxxxxx"]
             etcdKey["Key — etcd-data-kms-encryption-key"]
             ids["13 user-assigned identities"]
@@ -300,25 +311,25 @@ Exact object names inside the managed RG are chosen by the resource provider and
 
 ## Customer resource group
 
-Terraform resources live under [`terraform/`](../terraform/). Identity count and operator assignment count are asserted in [`terraform/identities.tftest.hcl`](../terraform/identities.tftest.hcl) (13 identities, 28 operator assignments).
+Terraform resources live under [`modules/`](../modules/) (composed by [`terraform/`](../terraform/)). Identity count and operator assignment count are asserted in [`modules/identities/identities.tftest.hcl`](../modules/identities/identities.tftest.hcl) (13 identities, 28 operator assignments).
 
 ### Inventory
 
 | Azure type | Default / pattern | Terraform address | Notes |
 |------------|-------------------|-------------------|-------|
-| Resource group | `my-cluster-rg` | `azurerm_resource_group.this` | Location from `LOCATION`. Tag `project=aro-hcp-reference`. |
-| Network security group | `customer-nsg` | `azurerm_network_security_group.this` | Associated only with the worker subnet. Empty of custom rules; operators may add rules later. |
-| Virtual network | `customer-vnet` | `azurerm_virtual_network.this` | Address space `10.0.0.0/16`. |
-| Subnet | `customer-subnet-1` | `azurerm_subnet.worker` | Worker subnet `10.0.0.0/24`. Private endpoint policies disabled. Default outbound access enabled. |
-| Subnet NSG association | — | `azurerm_subnet_network_security_group_association.worker` | Binds `customer-nsg` to the worker subnet. |
-| Subnet | `customer-vnet-integration-subnet` | `azapi_resource.vnet_integration_subnet` | `10.0.1.0/24`. Delegated to `Microsoft.RedHatOpenShift/hcpOpenShiftClusters`. Created via AzAPI because the azurerm provider cannot express this delegation. |
-| Subnet | `customer-jump-subnet` | `module.jumpbox[].azurerm_subnet.jump` | `10.0.2.0/28`. Optional. Only created when `ENABLE_JUMPBOX=true`. |
-| NSG | `customer-jump-nsg` | `module.jumpbox[].azurerm_network_security_group.jump` | SSH 22 from `JUMP_SSH_SOURCE_PREFIX` only. Only created when `ENABLE_JUMPBOX=true`. |
-| Public IP | `${CLUSTER_NAME}-jump-pip` | `module.jumpbox[].azurerm_public_ip.jump` | Standard static, on the jump NIC. Only created when `ENABLE_JUMPBOX=true`. |
-| Linux VM | `${CLUSTER_NAME}-jump` | `module.jumpbox[].azurerm_linux_virtual_machine.jump` | Fedora Cloud, `Standard_D2s_v6`, admin `fedora`. Only created when `ENABLE_JUMPBOX=true`. |
+| Resource group | `my-cluster-rg` | `azurerm_resource_group.this` | Location from `location`. Tag `project=aro-hcp-reference`. Default `${cluster_name}-rg`. |
+| Network security group | `my-cluster-nsg` | `azurerm_network_security_group.this` | Associated only with the worker subnet. Empty of custom rules; operators may add rules later. Default `${cluster_name}-nsg`. |
+| Virtual network | `my-cluster-vnet` | `azurerm_virtual_network.this` | Address space `10.0.0.0/16`. Default `${cluster_name}-vnet`. |
+| Subnet | `my-cluster-worker` | `azurerm_subnet.worker` | Worker subnet `10.0.0.0/24`. Private endpoint policies disabled. Default outbound access enabled. Default `${cluster_name}-worker`. |
+| Subnet NSG association | — | `azurerm_subnet_network_security_group_association.worker` | Binds the customer NSG to the worker subnet. |
+| Subnet | `my-cluster-integration` | `azapi_resource.vnet_integration_subnet` | `10.0.1.0/24`. Delegated to `Microsoft.RedHatOpenShift/hcpOpenShiftClusters`. Created via AzAPI because the azurerm provider cannot express this delegation. Default `${cluster_name}-integration`. |
+| Subnet | `customer-jump-subnet` | `module.jumpbox[].azurerm_subnet.jump` | `10.0.2.0/28`. Optional. Only created when `enable_jumpbox = true`. |
+| NSG | `customer-jump-nsg` | `module.jumpbox[].azurerm_network_security_group.jump` | SSH 22 from `jump_ssh_source_prefix` only. Only created when `enable_jumpbox = true`. |
+| Public IP | `${cluster_name}-jump-pip` | `module.jumpbox[].azurerm_public_ip.jump` | Standard static, on the jump NIC. Only created when `enable_jumpbox = true`. |
+| Linux VM | `${cluster_name}-jump` | `module.jumpbox[].azurerm_linux_virtual_machine.jump` | Fedora Cloud, `Standard_D2s_v6`, admin `fedora`. Only created when `enable_jumpbox = true`. |
 | Key Vault | `cust-kv-` + 13-char random | `azurerm_key_vault.this` | RBAC authorization, public network access, soft-delete 7 days, purge protection off. |
 | Key Vault key | `etcd-data-kms-encryption-key` | `azurerm_key_vault_key.etcd_encryption` | RSA 2048; wrap/unwrap/encrypt/decrypt/sign/verify. |
-| User-assigned identity × 13 | `${CLUSTER_NAME}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
+| User-assigned identity × 13 | `${cluster_name}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
 | Role assignment × 28 | — | `azurerm_role_assignment.this` | Operator RBAC from the 0.0.2 CLI guide. |
 | Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key. |
 | HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
@@ -330,12 +341,12 @@ This reference **does not** create a private Key Vault, private endpoint, or `pr
 
 ```mermaid
 flowchart TB
-    subgraph vnet["customer-vnet — 10.0.0.0/16"]
-        subgraph worker["customer-subnet-1 — 10.0.0.0/24"]
+    subgraph vnet["my-cluster-vnet — 10.0.0.0/16"]
+        subgraph worker["my-cluster-worker — 10.0.0.0/24"]
             nics["Worker NICs"]
             pods["Pod overlay 10.128.0.0/14"]
         end
-        subgraph vis["customer-vnet-integration-subnet — 10.0.1.0/24"]
+        subgraph vis["my-cluster-integration — 10.0.1.0/24"]
             del["Delegation: Microsoft.RedHatOpenShift/hcpOpenShiftClusters"]
         end
         subgraph jump["customer-jump-subnet — 10.0.2.0/28"]
@@ -344,10 +355,10 @@ flowchart TB
         end
     end
 
-    nsg["customer-nsg"] --> worker
+    nsg["my-cluster-nsg"] --> worker
     jumpNsg["customer-jump-nsg"] --> jump
     hcp["Hosted control plane"] -->|"private connectivity"| vis
-    api["API Public by default / Private when API_VISIBILITY=Private"] -.-> hcp
+    api["API/ingress Public by default / Private when api_visibility or ingress_visibility=Private"] -.-> hcp
     workers["Worker VMs in managed RG"] --> nics
     nics --> pods
     jumpPip --> jumpVm
@@ -368,7 +379,7 @@ flowchart TB
 | `10.0.0.0/16` | VNet / machine CIDR | Terraform `address_prefix`; ARM network default `machineCidr` |
 | `10.0.0.0/24` | Worker subnet | Terraform `subnet_prefix`; cluster `platform.subnetId` |
 | `10.0.1.0/24` | VNet integration subnet | Terraform `vnet_integration_subnet_prefix`; cluster `platform.vnetIntegrationSubnetId` |
-| `10.0.2.0/28` | Jump subnet | Terraform `jump_subnet_prefix`; optional `ENABLE_JUMPBOX` |
+| `10.0.2.0/28` | Jump subnet | Terraform `jump_subnet_prefix`; optional `enable_jumpbox` |
 | `10.128.0.0/14` | Pod CIDR | Terraform `pod_cidr` (ARM default) |
 | `172.30.0.0/16` | Service CIDR | Terraform `service_cidr` (ARM default) |
 
@@ -376,23 +387,24 @@ Terraform sets `network.podCidr`, `network.serviceCidr`, `network.machineCidr`, 
 
 **Outbound:** `platform.outboundType` defaults to `LoadBalancer`. The load balancer is created in the managed resource group.
 
-**API visibility:** `Public` by default. Set `API_VISIBILITY=Private` in `cluster.env` (create-time, immutable). Ingress/`*.apps` stay public. Private kube-apiserver requires a path into the VNet (this repo’s jump + sshuttle, or your own). `platform.outboundType` remains `LoadBalancer` (outbound public IP in the managed RG still exists).
+**API visibility:** `Public` by default. Set `api_visibility = "Private"` in `terraform.tfvars` (create-time, immutable). **Ingress / console:** `Public` by default. Set `ingress_visibility = "Private"` for a private default ingress (console and `*.apps`). Private kube-apiserver and private ingress require a path into the VNet (this repo’s jump + sshuttle, or your own). `platform.outboundType` remains `LoadBalancer` (outbound public IP in the managed RG still exists).
 
 **VNet integration subnet** is required for hosted-control-plane private connectivity into the customer VNet. It must remain delegated; do not place worker NICs on it.
 
 ### Jump box (optional)
 
-Independent of API visibility. When `ENABLE_JUMPBOX=true`, Terraform module [`terraform/modules/jumpbox`](../terraform/modules/jumpbox) creates a Fedora Cloud VM on `customer-jump-subnet` (`10.0.2.0/28`) with a Standard public IP and NSG allowing SSH 22 only from `JUMP_SSH_SOURCE_PREFIX`.
+Independent of API visibility. When `enable_jumpbox = true`, Terraform module [`modules/jumpbox`](../modules/jumpbox) creates a Fedora Cloud VM on `customer-jump-subnet` (`10.0.2.0/28`) with a Standard public IP and NSG allowing SSH 22 only from `jump_ssh_source_prefix`.
 
-1. `make jump-key` — writes gitignored `config/jump` + `config/jump.pub` (plan/apply require the `.pub` when jump is on).
-2. Set `ENABLE_JUMPBOX=true` and `JUMP_SSH_SOURCE_PREFIX` (your `/32`) in `cluster.env`.
-3. `make apply` — provisions subnet, NSG, PIP, NIC, and VM (`Standard_D2s_v6`, admin `fedora`, Trusted Launch). Image default: `/communityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/images/Fedora-Cloud-44-x64/versions/latest`.
-4. `make jump` — prints the sshuttle command (uses `config/jump` and the VNet `address_prefix`). Run with `--dns` so private API DNS resolves on the laptop.
-5. `make kubeconfig` still uses ARM (`requestAdminCredential`); only `oc` / API hostname traffic needs sshuttle when the API is private.
+1. `make cluster.<name>.jump-key` — writes gitignored `clusters/<name>/jump` + `jump.pub` (plan/apply require the `.pub` when jump is on).
+2. Set `enable_jumpbox = true` and `jump_ssh_source_prefix` (your `/32`) in `terraform.tfvars`.
+3. `make cluster.<name>.apply` — provisions subnet, NSG, PIP, NIC, and VM (`Standard_D2s_v6`, admin `fedora`, Trusted Launch). Image default: `/communityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/images/Fedora-Cloud-44-x64/versions/latest`.
+4. `make cluster.<name>.jump` — prints the sshuttle command (uses `clusters/<name>/jump` and the VNet `address_prefix`). Run with `--dns` so private API DNS resolves on the laptop.
+5. `make cluster.<name>.kubeconfig` still uses ARM (`requestAdminCredential`); only `oc` / API hostname traffic needs sshuttle when the API is private.
+6. `make cluster.<name>.private-dns` — creates a customer-RG Private DNS zone (VNet-linked) with `api` → managed `hypershift.local` IP, optional `*.apps` when the ingress router internal LB IP is found, and writes `clusters/<name>/operator-hosts.snippet` for `/etc/hosts` when public DNS still resolves `*.aroapp-hcp.io`.
 
-API hostname is `https://api.<id>.<region>.aroapp-hcp.io:443`. sshuttle `--dns` is not enough on its own: after kubeconfig, copy the private A record from the managed RG zone `hypershift.local` (`api.<cluster-id>`) into a customer-RG Private DNS zone named `<id>.<region>.aroapp-hcp.io` (record `api` → that IP), VNet-linked with registration disabled.
+API hostname is `https://api.<id>.<region>.aroapp-hcp.io:443`. sshuttle `--dns` alone may not route `oc` correctly if the laptop still resolves public `aroapp-hcp.io` addresses — use **private-dns** and the hosts snippet as above.
 
-Quota: **+2 vCPU** of `Standard_D2s_v6` in `LOCATION` when the jump is enabled.
+Quota: **+2 vCPU** of `Standard_D2s_v6` in `location` when the jump is enabled.
 
 ## Key Vault and etcd KMS
 
@@ -407,13 +419,13 @@ kms.activeKey.name: etcd-data-kms-encryption-key
 kms.activeKey.version: <azurerm_key_vault_key.etcd_encryption.version>
 ```
 
-The KMS identity (`${CLUSTER_NAME}-kms`) has **Key Vault Crypto User** on the vault. The cluster resource is created only after that assignment exists.
+The KMS identity (`${cluster_name}-kms`) has **Key Vault Crypto User** on the vault. The cluster resource is created only after that assignment exists.
 
-Terraform sets `purge_soft_delete_on_destroy = true` on the azurerm provider so `make destroy` can purge the vault. Redeploying without purge can collide on the random vault name only if a soft-deleted vault with the same name still exists.
+Terraform sets `purge_soft_delete_on_destroy = true` on the azurerm provider so `make cluster.<name>.destroy` can purge the vault. Redeploying without purge can collide on the random vault name only if a soft-deleted vault with the same name still exists.
 
 ## Identities and RBAC
 
-Thirteen user-assigned identities (service + 9 control-plane operators + 3 data-plane operators). Names are `${CLUSTER_NAME}-<role>` with **no** random suffix (unlike older demo Bicep).
+Thirteen user-assigned identities (service + 9 control-plane operators + 3 data-plane operators). Names are `${cluster_name}-<role>` with **no** random suffix (unlike older demo Bicep).
 
 ```mermaid
 flowchart TB
@@ -454,23 +466,23 @@ flowchart TB
 
 | Local key | Azure name | OperatorsAuthentication slot |
 |-----------|------------|------------------------------|
-| `service` | `${CLUSTER_NAME}-service` | `serviceManagedIdentity` |
-| `cluster_api_azure` | `${CLUSTER_NAME}-cluster-api-azure` | CP `cluster-api-azure` |
-| `control_plane` | `${CLUSTER_NAME}-control-plane` | CP `control-plane` |
-| `cloud_controller_manager` | `${CLUSTER_NAME}-cloud-controller-manager` | CP `cloud-controller-manager` |
-| `ingress` | `${CLUSTER_NAME}-ingress` | CP `ingress` |
-| `disk_csi_driver` | `${CLUSTER_NAME}-disk-csi-driver` | CP `disk-csi-driver` |
-| `file_csi_driver` | `${CLUSTER_NAME}-file-csi-driver` | CP `file-csi-driver` |
-| `image_registry` | `${CLUSTER_NAME}-image-registry` | CP `image-registry` |
-| `cloud_network_config` | `${CLUSTER_NAME}-cloud-network-config` | CP `cloud-network-config` |
-| `kms` | `${CLUSTER_NAME}-kms` | CP `kms` |
-| `dp_disk_csi_driver` | `${CLUSTER_NAME}-dp-disk-csi-driver` | DP `disk-csi-driver` |
-| `dp_file_csi_driver` | `${CLUSTER_NAME}-dp-file-csi-driver` | DP `file-csi-driver` |
-| `dp_image_registry` | `${CLUSTER_NAME}-dp-image-registry` | DP `image-registry` |
+| `service` | `${cluster_name}-service` | `serviceManagedIdentity` |
+| `cluster_api_azure` | `${cluster_name}-cluster-api-azure` | CP `cluster-api-azure` |
+| `control_plane` | `${cluster_name}-control-plane` | CP `control-plane` |
+| `cloud_controller_manager` | `${cluster_name}-cloud-controller-manager` | CP `cloud-controller-manager` |
+| `ingress` | `${cluster_name}-ingress` | CP `ingress` |
+| `disk_csi_driver` | `${cluster_name}-disk-csi-driver` | CP `disk-csi-driver` |
+| `file_csi_driver` | `${cluster_name}-file-csi-driver` | CP `file-csi-driver` |
+| `image_registry` | `${cluster_name}-image-registry` | CP `image-registry` |
+| `cloud_network_config` | `${cluster_name}-cloud-network-config` | CP `cloud-network-config` |
+| `kms` | `${cluster_name}-kms` | CP `kms` |
+| `dp_disk_csi_driver` | `${cluster_name}-dp-disk-csi-driver` | DP `disk-csi-driver` |
+| `dp_file_csi_driver` | `${cluster_name}-dp-file-csi-driver` | DP `file-csi-driver` |
+| `dp_image_registry` | `${cluster_name}-dp-image-registry` | DP `image-registry` |
 
 ### Built-in role GUIDs
 
-From [`terraform/locals.tf`](../terraform/locals.tf), aligned with the 0.0.2 `az aro hcp` guide:
+From [`modules/identities/locals.tf`](../modules/identities/locals.tf), aligned with the 0.0.2 `az aro hcp` guide:
 
 | Local key | Role definition GUID |
 |-----------|----------------------|
@@ -586,19 +598,20 @@ sequenceDiagram
     RP-->>ARM: Succeeded
 ```
 
-AzAPI body in [`terraform/cluster.tf`](../terraform/cluster.tf) (`schema_validation_enabled = false`, create/delete timeouts 120m):
+AzAPI body in [`modules/cluster/cluster.tf`](../modules/cluster/cluster.tf) (`schema_validation_enabled = false`, create/delete timeouts 120m):
 
 | Property | Value |
 |----------|--------|
-| `name` / `location` | `CLUSTER_NAME` / `LOCATION` |
-| `properties.version.id` / `channelGroup` | `CLUSTER_VERSION` / `CLUSTER_CHANNEL` |
+| `name` / `location` | `cluster_name` / `location` |
+| `properties.version.id` / `channelGroup` | `cluster_version` / `cluster_channel`. Plan fails unless `cluster_version` is an enabled stream in `hcpOpenShiftVersions` for `location`. |
 | `platform.subnetId` | Worker subnet |
 | `platform.vnetIntegrationSubnetId` | AzAPI integration subnet |
 | `platform.networkSecurityGroupId` | Customer NSG |
-| `platform.managedResourceGroup` | `MANAGED_RESOURCE_GROUP` |
+| `platform.managedResourceGroup` | `managed_resource_group_name` |
 | `platform.outboundType` | `LoadBalancer` |
 | `etcd` KMS | Customer-managed; vault visibility Public |
-| `api.visibility` | `Public` (or `API_VISIBILITY`) |
+| `api.visibility` | `Public` (or `api_visibility`) |
+| `ingress.type` | `Public` (or `ingress_visibility`: Public, Private, Disabled) |
 | identity + `operatorsAuthentication` | Service + 9 CP identities; DP map; service MI |
 
 ARM properties always set (not left to RP defaults):
@@ -610,7 +623,8 @@ ARM properties always set (not left to RP defaults):
 | `network.serviceCidr` | `172.30.0.0/16` |
 | `network.machineCidr` | `10.0.0.0/16` |
 | `network.hostPrefix` | `23` |
-| `api.visibility` | `Public` unless `API_VISIBILITY=Private` |
+| `api.visibility` | `Public` unless `api_visibility = "Private"` |
+| `ingress.type` | `Public` unless `ingress_visibility` is `Private` or `Disabled` |
 | `platform.outboundType` | `LoadBalancer` |
 | `clusterImageRegistry.state` | `Enabled` |
 
@@ -633,21 +647,21 @@ Child resource:
 .../hcpOpenShiftClusters/my-cluster/nodePools/np-1
 ```
 
-| Property | Default (`cluster.env.example`) |
+| Property | Default (`terraform.tfvars.example`) |
 |----------|----------------------------------|
 | Name | `np-1` |
 | Replicas | `2` |
 | VM size | `Standard_D4s_v6` |
-| Version / channel | `4.22.9` / `stable` |
+| Version / channel | `4.22.9` / `stable`. Plan fails unless the patch is enabled in `hcpOpenShiftVersions` for `location`. |
 | Subnet | Cluster `platform.subnetId` (worker subnet) |
 
 OS disk is 64 GiB Standard SSD (`node_pool_disk_size_gib` / `node_pool_disk_storage_account_type`). Extra pools: `NAME=… REPLICAS=… VM_SIZE=… bash scripts/nodepool.sh create`.
 
-Worker VMs and disks appear in the **managed** RG. Their NICs attach to `customer-subnet-1`.
+Worker VMs and disks appear in the **managed** RG. Their NICs attach to `${cluster_name}-worker` (`my-cluster-worker` in the example).
 
 ## Managed resource group
 
-Created by the resource provider when the cluster is created. Named `MANAGED_RESOURCE_GROUP` (default `${CLUSTER_NAME}-managed`). Must be unique in the subscription.
+Created by the resource provider when the cluster is created. Named `managed_resource_group_name` (default `${cluster_name}-managed`). Must be unique in the subscription.
 
 Typical contents after the default node pool is ready (names are service-generated):
 
@@ -662,7 +676,7 @@ Typical contents after the default node pool is ready (names are service-generat
 | Additional role assignments | RP/HyperShift identities operating on this RG (on the order of a dozen; not defined in this repo). |
 | RH-managed NSG association | Service may associate an NSG with the worker subnet for platform traffic. |
 
-Do not run `az group delete` on the managed RG. `az aro hcp cluster delete` (via `make destroy`) removes the cluster, node pools, and then the managed RG.
+Do not run `az group delete` on the managed RG. `az aro hcp cluster delete` (via `make cluster.<name>.destroy`) removes the cluster, node pools, and then the managed RG.
 
 The hosted control plane (kube-apiserver, etcd, OAuth, console backend, operators) runs on the service management cluster. It is **not** listed in either customer resource group.
 
@@ -670,8 +684,8 @@ The hosted control plane (kube-apiserver, etcd, OAuth, console backend, operator
 
 ```mermaid
 flowchart TB
-    subgraph required["After make all"]
-        cred["make kubeconfig"]
+    subgraph required["After make cluster.<name>.apply"]
+        cred["make cluster.<name>.kubeconfig"]
         kube[".kube/config — 24h admin kubeconfig"]
         cred --> kube
     end
@@ -700,10 +714,10 @@ flowchart TB
 
 ### External authentication
 
-`make external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
+`make cluster.<name>.external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
 
 1. Reads `properties.console.url` and registers redirect URIs: `<console>/auth/callback` and `http://localhost:8000`.
-2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${CLUSTER_NAME}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
+2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${cluster_name}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
 3. Sets optional claims for `groups` on id/access/SAML tokens.
 4. Rotates a client secret.
 5. Creates `az aro hcp cluster external-auth` named `EXTERNAL_AUTH_NAME` (default `entra`) with:
@@ -714,7 +728,7 @@ flowchart TB
    - confidential console client + public CLI client
 6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret).
 
-Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make external-auth`.
+Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make cluster.<name>.external-auth`.
 
 Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Those create in-cluster `ClusterRoleBinding` objects (`entra-cluster-admin`), not Azure RBAC.
 
@@ -743,15 +757,15 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> Creating: terraform apply
     Creating --> Usable: cluster + node pool Succeeded
-    Usable --> Authed: make kubeconfig
+    Usable --> Authed: make cluster.<name>.kubeconfig
     Authed --> ConsoleReady: make external-auth
-    Usable --> Destroying: make destroy
+    Usable --> Destroying: make cluster.<name>.destroy
     Authed --> Destroying
     ConsoleReady --> Destroying
     Destroying --> [*]
 ```
 
-`make destroy` order:
+`make cluster.<name>.destroy` order:
 
 1. `external-auth.sh delete` — external-auth resource, console secret, Entra app (best-effort)
 2. `terraform state rm azapi_resource.node_pool` — OCPBUGS-86702: RP rejects DELETE of the last node pool
@@ -775,7 +789,7 @@ flowchart TB
 | Resource | Created by | Destroyed by | Customer-writable |
 |----------|------------|--------------|-------------------|
 | Customer RG, VNet, subnets, NSG, KV, identities, operator RBAC | Terraform | `terraform destroy` | Yes |
-| `hcpOpenShiftClusters` / default `nodePools` | Terraform AzAPI | `make destroy` (state-rm last pool, then destroy) | Update via TF/ARM; do not hand-edit RP fields |
+| `hcpOpenShiftClusters` / default `nodePools` | Terraform AzAPI | `make cluster.<name>.destroy` (state-rm last pool, then destroy) | Update via TF/ARM; do not hand-edit RP fields |
 | Extra `nodePools` | `az aro hcp` | `scripts/nodepool.sh delete` or cluster delete | Via CLI |
 | Managed RG contents | Resource provider / HyperShift | Cluster delete | No (deny assignment) |
 | Hosted control plane | ARO HCP service | Cluster delete | No |
@@ -788,15 +802,20 @@ flowchart TB
 
 | Path | Role |
 |------|------|
-| [`terraform/`](../terraform/) | Prerequisites, cluster, default node pool |
-| [`terraform/cluster.tf`](../terraform/cluster.tf) | AzAPI `hcpOpenShiftClusters` + `nodePools` |
-| [`terraform/jumpbox.tf`](../terraform/jumpbox.tf) | Optional Fedora jump VM (`ENABLE_JUMPBOX`) |
+| [`terraform/`](../terraform/) | Thin root: module composition + optional jumpbox |
+| [`modules/network/`](../modules/network/) | RG, VNet, NSG, subnets |
+| [`modules/identities/`](../modules/identities/) | Key Vault, etcd key, 13 MIs, RBAC |
+| [`modules/cluster/`](../modules/cluster/) | AzAPI `hcpOpenShiftClusters` + default `nodePools` |
+| [`modules/jumpbox/`](../modules/jumpbox/) | Optional Fedora jump VM |
+| [`hack/versions/`](../hack/versions/) | Tiny Terraform root for `make cluster.<name>.versions` |
+| [`terraform/jumpbox.tf`](../terraform/jumpbox.tf) | Root jumpbox wiring (`enable_jumpbox`) |
+| [`clusters/`](../clusters/) | Per-cluster `terraform.tfvars` + state |
 | [`scripts/destroy.sh`](../scripts/destroy.sh) | State-rm last pool then terraform destroy |
 | [`scripts/cluster.sh`](../scripts/cluster.sh) | Optional CLI cluster show/update/delete |
 | [`scripts/jump.sh`](../scripts/jump.sh) | Jump SSH keygen and sshuttle command |
 | [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Extra node pool lifecycle |
 | [`scripts/credentials.sh`](../scripts/credentials.sh) | Admin kubeconfig |
 | [`scripts/external-auth.sh`](../scripts/external-auth.sh) | Entra + external-auth |
-| [`config/cluster.env.example`](../config/cluster.env.example) | Names and versions |
+| [`clusters/public/terraform.tfvars`](../clusters/public/terraform.tfvars) | Names and versions |
 | [`AGENTS.md`](../AGENTS.md) | Source precedence when docs disagree |
 | [`README.md`](../README.md) | Operator quickstart |

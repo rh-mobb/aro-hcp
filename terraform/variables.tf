@@ -10,32 +10,38 @@ variable "cluster_name" {
 }
 
 variable "resource_group_name" {
-  description = "Customer resource group name."
+  description = "Customer resource group name. Defaults to <cluster_name>-rg."
   type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "vnet_name" {
-  description = "Virtual network name."
+  description = "Virtual network name. Defaults to <cluster_name>-vnet."
   type        = string
-  default     = "customer-vnet"
+  default     = null
+  nullable    = true
 }
 
 variable "subnet_name" {
-  description = "Worker subnet name."
+  description = "Worker subnet name. Defaults to <cluster_name>-worker."
   type        = string
-  default     = "customer-subnet-1"
+  default     = null
+  nullable    = true
 }
 
 variable "vnet_integration_subnet_name" {
-  description = "VNet integration subnet name."
+  description = "VNet integration subnet name. Defaults to <cluster_name>-integration."
   type        = string
-  default     = "customer-vnet-integration-subnet"
+  default     = null
+  nullable    = true
 }
 
 variable "nsg_name" {
-  description = "Network security group name."
+  description = "Network security group name. Defaults to <cluster_name>-nsg."
   type        = string
-  default     = "customer-nsg"
+  default     = null
+  nullable    = true
 }
 
 variable "address_prefix" {
@@ -80,6 +86,12 @@ variable "jump_ssh_public_key" {
   default     = ""
 }
 
+variable "jump_ssh_private_key_path" {
+  description = "Path to the jump SSH private key on the operator machine (used in sshuttle command output)."
+  type        = string
+  default     = "clusters/default/jump"
+}
+
 variable "tags" {
   description = "Tags applied to all resources."
   type        = map(string)
@@ -113,6 +125,17 @@ variable "api_visibility" {
   validation {
     condition     = contains(["Public", "Private"], var.api_visibility)
     error_message = "api_visibility must be Public or Private."
+  }
+}
+
+variable "ingress_visibility" {
+  description = "Default OpenShift ingress (console / *.apps) visibility: Public, Private, or Disabled. Create-time only."
+  type        = string
+  default     = "Public"
+
+  validation {
+    condition     = contains(["Public", "Private", "Disabled"], var.ingress_visibility)
+    error_message = "ingress_visibility must be Public, Private, or Disabled."
   }
 }
 

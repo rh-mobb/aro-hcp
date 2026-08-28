@@ -9,12 +9,24 @@ override.tf.json
 *_override.tf.json
 .terraform.tfstate.lock.info
 
-# Local config and secrets
+# Local config and secrets (legacy paths)
 config/cluster.env
+config/cluster.tfvars
 config/jump
 config/jump.pub
+
+# Operator tfvars (committed examples are un-ignored below)
 *.tfvars
-!*.tfvars.example
+!clusters/public/terraform.tfvars
+!clusters/private/terraform.tfvars
+
+# Per-cluster operator artifacts
+clusters/*/infrastructure.tfstate*
+clusters/*/.terraform/
+clusters/*/terraform.tfplan
+clusters/*/jump
+clusters/*/jump.pub
+clusters/*/operator-hosts.snippet
 
 # Kubeconfig and CLI artifacts
 .kube/
@@ -43,3 +55,7 @@ docs/superpowers/
 
 # Test artifacts
 tests/bats/tmp/
+
+# MkDocs
+.venv-docs/
+site/

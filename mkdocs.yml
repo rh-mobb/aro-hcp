@@ -1,0 +1,85 @@
+site_name: ARO HCP Reference Deployment
+site_description: Terraform reference for Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)
+site_url: https://rh-mobb.github.io/aro-hcp/
+repo_url: https://github.com/rh-mobb/aro-hcp
+repo_name: rh-mobb/aro-hcp
+edit_uri: edit/main/docs/
+copyright: Community reference deployment documentation (rh-mobb/aro-hcp).
+
+# RHDS tokens + fonts (Red Hat CDN). See docs/stylesheets/redhat-brand.css.
+extra_css:
+  - https://www.redhatstatic.com/dssf-001/v2/@rhds/tokens@3.1.0/css/global.css
+  - https://www.redhatstatic.com/dssf-001/v2/@redhat/redhat-font@4.1.0/font.min.css
+  - stylesheets/redhat-brand.css
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: redhat-light
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: redhat-dark
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+  - include-markdown
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+exclude_docs: |
+  superpowers/**
+  README.md
+
+validation:
+  nav:
+    omitted_files: ignore
+  links:
+    not_found: ignore
+    unrecognized_links: ignore
+    absolute_links: ignore
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Quick Start: getting-started/quick-start.md
+  - Prerequisites:
+      - Choose Your Path: prerequisites/index.md
+      - Account Prerequisites: prerequisites/account.md
+      - Full-Stack Deployment: prerequisites/full-stack.md
+  - Guides:
+      - External Auth (Entra ID): guides/external-auth-entra-id.md
+  - Reference:
+      - Architecture: architecture.md

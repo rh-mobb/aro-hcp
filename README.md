@@ -4,16 +4,18 @@ Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control 
 
 Based on [bennerv/ARO-HCP 0.0.2](https://github.com/bennerv/ARO-HCP/releases/tag/0.0.2) (`2026-06-30-preview` API).
 
+**Documentation:** [https://rh-mobb.github.io/aro-hcp/](https://rh-mobb.github.io/aro-hcp/) — prerequisites, permissions by step, external-auth, and architecture. Local preview: `make docs-preview`.
+
 ## Architecture
 
-After `make all` the subscription has two resource groups: a **customer RG** (Terraform + cluster ARM resource) and a **managed RG** (resource provider; deny assignment). The hosted control plane is not in the customer subscription.
+After `make cluster.<name>.apply` the subscription has two resource groups: a **customer RG** (Terraform + cluster ARM resource) and a **managed RG** (resource provider; deny assignment). The hosted control plane is not in the customer subscription.
 
-Detailed resource inventory, RBAC scopes, CIDRs, and diagrams: **[`docs/architecture.md`](docs/architecture.md)**.
+Documentation: **[`docs/README.md`](docs/README.md)** (index) · **[Architecture](docs/architecture.md)** (resources, diagrams) · **[Permissions by step](docs/prerequisites/full-stack.md#permissions-by-deployment-step)** (least privilege).
 
 ```text
-make all
+make cluster.public.apply
   ├── bootstrap.sh          # az aro hcp CLI extension (credentials / extra pools)
-  └── terraform apply       # RG, network, Key Vault, 13 identities, RBAC, cluster, default node pool
+  └── terraform apply       # modules: network, identities, cluster (+ optional jumpbox)
 ```
 
 | Layer | Tool | Resources |
@@ -22,72 +24,91 @@ make all
 | Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, external-auth |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
-Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `NAME=np-2 bash scripts/nodepool.sh create`.
+Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `NAME=np-2 bash scripts/nodepool.sh create`.
 
 ## Prerequisites
 
-- Azure subscription **allow-listed** for ARO HCP preview
-- **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG (UAA is required: Terraform creates role assignments)
-- **`make external-auth` only:** permission to create an Entra **app registration** (and client secret). Application Administrator is **not** always required — see [Operator permissions](docs/architecture.md#operator-permissions)
-- Tools: Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20` (for external-auth), optional `sshuttle` (private API via jump), optional `shellcheck`, `shfmt`, `tflint`, `bats`, `pre-commit`
+Complete **[Account prerequisites](docs/prerequisites/account.md)** before deploy. Summary:
 
-Register resource providers (done by Terraform by default):
+| Requirement | Notes |
+|-------------|-------|
+| ARO HCP preview **allow-list** | Not an Azure role — subscription must be enrolled |
+| **Contributor + User Access Administrator** on customer RG | Minimum for `make cluster.<name>.apply` (Terraform writes 28 role assignments). **Owner** also works but is broader |
+| **`make cluster.<name>.external-auth` only** | Entra app registration rights — **Application Administrator not required** when users may register apps; see [External auth guide](docs/guides/external-auth-entra-id.md) |
+| Tools | Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20`, optional `sshuttle`, `make bootstrap` for `az aro hcp` |
+
+Per-target permission matrix: **[Full-stack deployment](docs/prerequisites/full-stack.md#permissions-by-deployment-step)**.
+
+Register `Microsoft.RedHatOpenShift` if not already registered (Terraform also registers providers):
 
 ```bash
 az provider register --namespace Microsoft.RedHatOpenShift --wait
 ```
 
-### Valid regions
-
-`australiaeast`, `brazilsouth`, `canadacentral`, `centralindia`, `eastus2`, `switzerlandnorth`, `uksouth`, `westeurope`
-
-### Quota
-
-At least **8 vCPU** of your worker VM SKU in the target region (default `Standard_D4s_v6` × 2 replicas = 8 vCPU). Add more if creating additional node pools. When `ENABLE_JUMPBOX=true`, add **+2 vCPU** of `Standard_D2s_v6`.
+Valid regions and quota details: [Account prerequisites](docs/prerequisites/account.md).
 
 ## Quick start
 
+See **[Quick start guide](docs/getting-started/quick-start.md)**. Minimal path:
+
 ```bash
-cp config/cluster.env.example config/cluster.env
-# Edit LOCATION, CLUSTER_NAME, RESOURCE_GROUP, versions
+cp -r clusters/public clusters/my-cluster
+# Edit clusters/my-cluster/terraform.tfvars (location, cluster_name, versions)
 
 make bootstrap
-make all                 # terraform apply: prereqs + cluster + default nodepool (~30-60 min)
-make kubeconfig          # admin creds (24h TTL)
-make external-auth       # Entra + console (needed if the console shows "Application is not available")
+make cluster.my-cluster.init
+make cluster.my-cluster.plan
+make cluster.my-cluster.apply           # prereqs + cluster + default nodepool (~30-60 min)
+make cluster.my-cluster.kubeconfig      # admin creds (24h TTL)
+make cluster.my-cluster.external-auth   # Entra + console (required for usable console)
 ```
 
+Committed examples: [`clusters/public`](clusters/public/terraform.tfvars) (public API/ingress) and [`clusters/private`](clusters/private/terraform.tfvars) (private + jump box). See [`clusters/README.md`](clusters/README.md).
+
 ## Makefile targets
+
+Global:
 
 | Target | Description |
 |--------|-------------|
 | `make help` | List targets |
 | `make fmt` / `lint` / `test` | Format, lint, test |
 | `make bootstrap` | Install `az aro hcp` extension |
-| `make init` / `plan` / `apply` | Terraform: prereqs + cluster + default node pool |
-| `make cluster` / `nodepool` | Aliases of `make apply` |
-| `make all` | Full deploy to usable cluster |
-| `make kubeconfig` | Admin kubeconfig → `.kube/config` |
-| `make revoke-credentials` | Revoke admin creds |
-| `make versions` | List OpenShift versions for region |
-| `make jump-key` | Generate `config/jump` + `config/jump.pub` for the optional jump VM |
-| `make jump` | Print sshuttle command for the jump VM |
-| `make external-auth` | Entra app + external-auth + console secret |
-| `make external-auth-delete` | Remove external-auth |
-| `make destroy` | Teardown (external-auth → state-rm last pool → terraform destroy) |
+
+Per cluster (`<name>` = directory under `clusters/`):
+
+| Target | Description |
+|--------|-------------|
+| `make cluster.<name>.init` | Terraform init (per-cluster state) |
+| `make cluster.<name>.plan` | Terraform plan |
+| `make cluster.<name>.apply` | Terraform apply: prereqs + cluster + default node pool |
+| `make cluster.<name>.destroy` | Teardown (external-auth → state-rm last pool → terraform destroy) |
+| `make cluster.<name>.kubeconfig` | Admin kubeconfig → `.kube/config` |
+| `make cluster.<name>.revoke-credentials` | Revoke admin creds |
+| `make cluster.<name>.versions` | List enabled HCP versions for `location` |
+| `make cluster.<name>.jump-key` | Generate `clusters/<name>/jump` + `jump.pub` |
+| `make cluster.<name>.jump` | Print sshuttle command |
+| `make cluster.<name>.external-auth` | Entra app + external-auth + console |
+| `make cluster.<name>.external-auth-delete` | Remove external-auth |
 
 ## Configuration
 
-Copy [`config/cluster.env.example`](config/cluster.env.example) to `config/cluster.env`. Scripts and Make read this file; Terraform vars are passed via `TF_VAR_*` from the Makefile.
+Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfvars`. `make cluster.<name>.plan` / `apply` / `destroy` pass that file with `-var-file` (beats leftover `TF_VAR_*` for keys in the file). Scripts after apply read terraform outputs, then fall back to the same file.
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `API_VISIBILITY` | `Public` | Create-time only: `Public` or `Private`. Ingress stays public. |
-| `ENABLE_JUMPBOX` | `false` | When `true`, Terraform creates the Fedora jump VM. |
-| `JUMP_SSH_SOURCE_PREFIX` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
-| `JUMP_SSH_PUBLIC_KEY_PATH` | `config/jump.pub` | Public key path; create with `make jump-key`. |
+| `cluster_name` | (required) | Also prefixes identities and, unless overridden, RG / VNet / subnet / NSG names. |
+| `resource_group_name` | `<cluster_name>-rg` | Optional. Same pattern: `managed` / `vnet` / `worker` / `integration` / `nsg`. |
+| `api_visibility` | `Public` | Create-time only: `Public` or `Private`. |
+| `ingress_visibility` | `Public` | Create-time only: `Public`, `Private`, or `Disabled`. Console / `*.apps`. |
+| `enable_jumpbox` | `false` | When `true`, Terraform creates the Fedora jump VM. |
+| `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
 
-When `ENABLE_JUMPBOX=true`, `make plan` / `make apply` require `config/jump.pub` (`make jump-key` first).
+The jump public key is `clusters/<name>/jump.pub` (create with `make cluster.<name>.jump-key`); Make exports it as `TF_VAR_jump_ssh_public_key` when the file exists. It is not stored in `terraform.tfvars`.
+
+When `enable_jumpbox = true`, `make cluster.<name>.plan` / `apply` require `clusters/<name>/jump.pub` (`make cluster.<name>.jump-key` first).
+
+Per-cluster Terraform state: `clusters/<name>/infrastructure.tfstate` (see [`clusters/README.md`](clusters/README.md)).
 
 ## Git hygiene
 
@@ -99,7 +120,7 @@ make fmt lint test       # before every commit
 - Branch from `main` using `feat/`, `fix/`, `chore/`, `docs/` prefixes
 - Conventional Commits: `type(scope): description`
 - Update [`CHANGELOG.md`](CHANGELOG.md) in the same commit as operator-visible changes; do not log debug/WIP iterations
-- Never commit secrets, `config/cluster.env`, `*.tfstate`, or kubeconfig files
+- Never commit secrets, operator `clusters/*/terraform.tfvars` (except committed examples), `*.tfstate`, or kubeconfig files
 - See [`AGENTS.md`](AGENTS.md) for agent-specific rules
 
 ## Mapping to 0.0.2 guide
@@ -107,13 +128,13 @@ make fmt lint test       # before every commit
 | 0.0.2 section | This repo |
 |---------------|-----------|
 | Install extension | `make bootstrap` |
-| Register RP / create RG | `terraform apply` |
-| Network + KeyVault + identities | `terraform apply` |
-| Cluster create | `terraform apply` (`azapi_resource.hcp_cluster`) |
+| Register RP / create RG | `make cluster.<name>.apply` |
+| Network + KeyVault + identities | `make cluster.<name>.apply` |
+| Cluster create | `make cluster.<name>.apply` (AzAPI in `modules/cluster`) |
 | Node pools | Default: Terraform. Extra: `scripts/nodepool.sh` |
-| Credentials | `scripts/credentials.sh` |
-| get-versions | `scripts/versions.sh` |
-| External auth | `scripts/external-auth.sh` |
+| Credentials | `make cluster.<name>.kubeconfig` |
+| get-versions | `make cluster.<name>.versions` |
+| External auth | `make cluster.<name>.external-auth` |
 
 ## RBAC note
 
@@ -123,19 +144,23 @@ Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/im
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Last node pool delete 409 | OCPBUGS-86702 | Use `make destroy` (state-rm default pool, then terraform destroy). Do not `terraform destroy` alone. |
-| Cluster create permission error | Wrong RBAC scope on MI | Verify VNet-scoped roles in `terraform/identities.tf` |
+| `Cluster public does not exist` on kubeconfig | GNU Make exported `CLUSTER_NAME=public` (profile dir) shadowed Azure `cluster_name` | Fixed in Makefile (`CLUSTER_PROFILE` + `unexport CLUSTER_NAME`). Update scripts; re-run `make cluster.<profile>.kubeconfig` |
+| Last node pool delete 409 | OCPBUGS-86702 | Use `make cluster.<name>.destroy`. Do not `terraform destroy` alone. |
+| Destroy 409: cluster is deleting | Interrupted destroy; ARM delete still running | Re-run `make cluster.<name>.destroy` (waits and retries). |
+| Cluster create permission error | Wrong RBAC scope on MI | Verify VNet-scoped roles in `modules/identities/` |
 | Credential POST 404 | Cluster not ready | Wait for `provisioningState: Succeeded` |
 | Admin kubeconfig fails | CLI issue | `credentials.sh` falls back to REST async flow |
-| Credential expired | 24h TTL | `make kubeconfig` again |
-| `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [permissions](docs/architecture.md#operator-permissions) |
+| Credential expired | 24h TTL | `make cluster.<name>.kubeconfig` again |
+| `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [Entra permissions](docs/guides/external-auth-entra-id.md#directory-roles-least-privilege) |
 | AADSTS65001 consent error | User consent disabled | Admin consent for Azure CLI Graph scopes and/or the OIDC app |
-| Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make external-auth` |
+| Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make cluster.<name>.external-auth` |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
-| `oc` cannot reach API hostname | `API_VISIBILITY=Private` without VNet path or API DNS | `make jump` and start sshuttle; add customer Private DNS for `api.<id>.<region>.aroapp-hcp.io` (see architecture). ARM `make kubeconfig` still works |
-| plan/apply: missing config/jump.pub | Jump enabled without a key | `make jump-key` |
-| Jump SSH timeout | Source IP not in `JUMP_SSH_SOURCE_PREFIX` | Set prefix to your /32 and re-apply |
+| `oc` cannot reach API hostname | `api_visibility = "Private"` without VNet path or API DNS | `make cluster.<name>.jump` and start sshuttle; `make cluster.<name>.private-dns`; merge `clusters/<name>/operator-hosts.snippet` into `/etc/hosts` if needed |
+| Console unreachable from the internet | `ingress_visibility = "Private"` | Use sshuttle (`make cluster.<name>.jump`); `private-dns` + hosts snippet for console hostname |
+| Console secret apply timeout (private) | `oc` without sshuttle or stale public DNS for `*.aroapp-hcp.io` | sshuttle + `private-dns` + hosts snippet; `make cluster.<name>.console-secret` |
+| plan/apply: missing clusters/<name>/jump.pub | Jump enabled without a key | `make cluster.<name>.jump-key` |
+| Jump SSH timeout | Source IP not in `jump_ssh_source_prefix` | Set prefix to your /32 and re-apply |
 
 ## Known issues
 
@@ -170,13 +195,4 @@ The `references/` folder may contain cloned ARO-HCP repos and hackathon guides (
 
 ## Optional: remote Terraform state
 
-```hcl
-terraform {
-  backend "azurerm" {
-    resource_group_name  = "tfstate-rg"
-    storage_account_name = "tfstate"
-    container_name       = "tfstate"
-    key                  = "aro-hcp.terraform.tfstate"
-  }
-}
-```
+Per-cluster local state is the default (`clusters/<name>/infrastructure.tfstate`). For remote backends, init with `-backend-config` pointing at a unique key per cluster (see [`terraform/versions.tf`](terraform/versions.tf) and [`clusters/README.md`](clusters/README.md)).

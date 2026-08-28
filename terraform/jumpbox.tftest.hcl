@@ -8,7 +8,18 @@ mock_provider "azurerm" {
     }
   }
 }
-mock_provider "azapi" {}
+mock_provider "azapi" {
+  mock_data "azapi_resource_list" {
+    defaults = {
+      output = {
+        enabled = [
+          { name = "4.22.9", channelGroup = "stable" },
+          { name = "4.22.10", channelGroup = "stable" },
+        ]
+      }
+    }
+  }
+}
 mock_provider "random" {}
 
 variables {
@@ -33,8 +44,7 @@ run "jumpbox_enabled" {
   variables {
     enable_jumpbox         = true
     jump_ssh_source_prefix = "203.0.113.10/32"
-    # Valid ed25519 pubkey (azurerm validates key material during plan)
-    jump_ssh_public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB9ZPmSkVDQJ1HKpG4edUDTVSxf5OMQmRlk3uwkJ0zd/ test"
+    jump_ssh_public_key    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB9ZPmSkVDQJ1HKpG4edUDTVSxf5OMQmRlk3uwkJ0zd/ test"
   }
 
   assert {
@@ -42,7 +52,6 @@ run "jumpbox_enabled" {
     error_message = "Jump box module must be created when enable_jumpbox is true."
   }
 
-  # Child module resources are not addressable from root tests; assert via outputs.
   assert {
     condition     = module.jumpbox[0].subnet_address_prefix == "10.0.2.0/28"
     error_message = "Jump subnet must be 10.0.2.0/28."

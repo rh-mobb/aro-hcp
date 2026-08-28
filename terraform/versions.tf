@@ -1,6 +1,9 @@
 terraform {
   required_version = ">= 1.9.0"
 
+  # Per-cluster state path via: terraform init -reconfigure -backend-config="path=../clusters/<name>/infrastructure.tfstate"
+  backend "local" {}
+
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"

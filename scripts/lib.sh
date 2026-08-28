@@ -3,8 +3,27 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONFIG_FILE="${CONFIG_FILE:-${ROOT_DIR}/config/cluster.env}"
 TF_DIR="${ROOT_DIR}/terraform"
+CLUSTER="${CLUSTER:-}"
+TFVARS="${TFVARS:-}"
+
+if [[ -z "${TFVARS}" && -n "${CLUSTER}" ]]; then
+  TFVARS="${ROOT_DIR}/clusters/${CLUSTER}/terraform.tfvars"
+fi
+
+if [[ -z "${TFVARS}" ]]; then
+  TFVARS="${ROOT_DIR}/clusters/public/terraform.tfvars"
+fi
+
+if [[ -n "${CLUSTER:-}" ]]; then
+  export TF_DATA_DIR="${ROOT_DIR}/clusters/${CLUSTER}/.terraform"
+fi
+
+cluster_tf_data_dir() {
+  local cluster="${1:-${CLUSTER}}"
+  : "${cluster:?CLUSTER or cluster name required}"
+  printf '%s\n' "${ROOT_DIR}/clusters/${cluster}/.terraform"
+}
 
 log() {
   printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -20,28 +39,19 @@ require_cmd() {
   command -v "${cmd}" >/dev/null 2>&1 || die "Required command not found: ${cmd}"
 }
 
-load_config() {
-  [[ -f "${CONFIG_FILE}" ]] || die "Config not found: ${CONFIG_FILE} (copy config/cluster.env.example)"
-  # shellcheck disable=SC1090
-  source "${CONFIG_FILE}"
-  : "${LOCATION:?LOCATION required}"
-  : "${CLUSTER_NAME:?CLUSTER_NAME required}"
-  : "${RESOURCE_GROUP:?RESOURCE_GROUP required}"
-  : "${MANAGED_RESOURCE_GROUP:=${CLUSTER_NAME}-managed}"
-  : "${KUBECONFIG_PATH:=${ROOT_DIR}/.kube/config}"
-  : "${API_VERSION:=2026-06-30-preview}"
-  : "${CLUSTER_VERSION:=4.20}"
-  : "${CLUSTER_CHANNEL:=stable}"
-  : "${NODEPOOL_NAME:=np-1}"
-  : "${NODEPOOL_REPLICAS:=2}"
-  : "${NODEPOOL_VM_SIZE:=Standard_D4s_v6}"
-  : "${NODEPOOL_CHANNEL:=${CLUSTER_CHANNEL}}"
-  : "${NODEPOOL_VERSION:=${CLUSTER_VERSION}}"
-  : "${EXTERNAL_AUTH_NAME:=entra}"
-  : "${APP_DISPLAY_NAME:=${CLUSTER_NAME}-auth}"
-  : "${API_VISIBILITY:=Public}"
-  : "${ENABLE_JUMPBOX:=false}"
-  : "${JUMP_SSH_PUBLIC_KEY_PATH:=${ROOT_DIR}/config/jump.pub}"
+# Read a string/number/bool from terraform.tfvars (simple `key = value` lines).
+tfvars_get() {
+  local key="$1"
+  [[ -f "${TFVARS}" ]] || return 1
+  awk -v k="${key}" '
+    $1 == k && $2 == "=" {
+      val = $3
+      for (i = 4; i <= NF; i++) val = val " " $i
+      gsub(/^[ \t"]+|[ \t",]+$/, "", val)
+      print val
+      exit
+    }
+  ' "${TFVARS}"
 }
 
 tf_output() {
@@ -56,6 +66,60 @@ tf_output_json() {
   else
     terraform -chdir="${TF_DIR}" output -json
   fi
+}
+
+# Prefer terraform output (after apply); fall back to terraform.tfvars (pre-apply).
+resolve_tf() {
+  local name="$1"
+  local val=""
+  val="$(terraform -chdir="${TF_DIR}" output -raw "${name}" 2>/dev/null || true)"
+  if [[ -n "${val}" && "${val}" != "null" ]]; then
+    printf '%s\n' "${val}"
+    return 0
+  fi
+  tfvars_get "${name}"
+}
+
+load_tf() {
+  # GNU Make may export CLUSTER_NAME=profile dir (e.g. public); always resolve Azure names from state/tfvars.
+  if [[ -n "${CLUSTER:-}" && "${CLUSTER_NAME:-}" == "${CLUSTER}" ]]; then
+    unset CLUSTER_NAME
+  fi
+  if [[ -n "${CLUSTER:-}" && -z "${TF_DATA_DIR:-}" ]]; then
+    export TF_DATA_DIR="${ROOT_DIR}/clusters/${CLUSTER}/.terraform"
+  fi
+
+  CLUSTER_NAME="${CLUSTER_NAME:-$(resolve_tf cluster_name || true)}"
+  RESOURCE_GROUP="${RESOURCE_GROUP:-$(resolve_tf resource_group_name || true)}"
+  LOCATION="${LOCATION:-$(resolve_tf location || true)}"
+  MANAGED_RESOURCE_GROUP="${MANAGED_RESOURCE_GROUP:-$(resolve_tf managed_resource_group_name || true)}"
+  CLUSTER_VERSION="${CLUSTER_VERSION:-$(resolve_tf cluster_version || true)}"
+  CLUSTER_CHANNEL="${CLUSTER_CHANNEL:-$(resolve_tf cluster_channel || true)}"
+  NODEPOOL_NAME="${NODEPOOL_NAME:-$(resolve_tf node_pool_name || true)}"
+  NODEPOOL_REPLICAS="${NODEPOOL_REPLICAS:-$(resolve_tf node_pool_replicas || true)}"
+  NODEPOOL_VM_SIZE="${NODEPOOL_VM_SIZE:-$(resolve_tf node_pool_vm_size || true)}"
+  NODEPOOL_CHANNEL="${NODEPOOL_CHANNEL:-$(resolve_tf node_pool_channel || true)}"
+  NODEPOOL_VERSION="${NODEPOOL_VERSION:-$(resolve_tf node_pool_version || true)}"
+  API_VISIBILITY="${API_VISIBILITY:-$(resolve_tf api_visibility || true)}"
+  INGRESS_VISIBILITY="${INGRESS_VISIBILITY:-$(resolve_tf ingress_visibility || true)}"
+
+  : "${CLUSTER_NAME:?cluster_name required (terraform output or clusters/<name>/terraform.tfvars)}"
+  : "${RESOURCE_GROUP:=${CLUSTER_NAME}-rg}"
+  : "${LOCATION:?location required (terraform output or clusters/<name>/terraform.tfvars)}"
+  : "${MANAGED_RESOURCE_GROUP:=${CLUSTER_NAME}-managed}"
+  : "${KUBECONFIG_PATH:=${ROOT_DIR}/.kube/config}"
+  : "${API_VERSION:=2026-06-30-preview}"
+  : "${CLUSTER_VERSION:=4.22}"
+  : "${CLUSTER_CHANNEL:=stable}"
+  : "${NODEPOOL_NAME:=np-1}"
+  : "${NODEPOOL_REPLICAS:=2}"
+  : "${NODEPOOL_VM_SIZE:=Standard_D4s_v6}"
+  : "${NODEPOOL_CHANNEL:=${CLUSTER_CHANNEL}}"
+  : "${NODEPOOL_VERSION:=${CLUSTER_VERSION}}"
+  : "${EXTERNAL_AUTH_NAME:=entra}"
+  : "${APP_DISPLAY_NAME:=${CLUSTER_NAME}-auth}"
+  : "${API_VISIBILITY:=Public}"
+  : "${INGRESS_VISIBILITY:=Public}"
 }
 
 subscription_id() {

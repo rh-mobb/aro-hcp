@@ -3,139 +3,113 @@
 SHELL := /bin/bash
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 TF_DIR := $(ROOT_DIR)/terraform
-CONFIG_FILE := $(ROOT_DIR)/config/cluster.env
+MODULES_DIR := $(ROOT_DIR)/modules
+VERSIONS_TF_DIR := $(ROOT_DIR)/hack/versions
 SCRIPTS := $(ROOT_DIR)/scripts
 
-export CONFIG_FILE
-
-# Load cluster.env if present for variable overrides
-ifneq (,$(wildcard $(CONFIG_FILE)))
-include $(CONFIG_FILE)
-export
-endif
-
-# Export TF_VAR_* only when the Make variable is non-empty. An empty export
-# (CI without cluster.env) overrides Terraform defaults and breaks tests
-# (TF_VAR_node_pool_replicas="" is not a number; TF_VAR_vnet_name="" fails azurerm).
-# := so cluster.env wins over leftover shell TF_VAR_* for Make targets.
-define export_tf_if_set
-ifneq ($$(strip $$($(1))),)
-export TF_VAR_$(2) := $$($(1))
-endif
-endef
-
-$(eval $(call export_tf_if_set,LOCATION,location))
-$(eval $(call export_tf_if_set,CLUSTER_NAME,cluster_name))
-$(eval $(call export_tf_if_set,RESOURCE_GROUP,resource_group_name))
-$(eval $(call export_tf_if_set,VNET_NAME,vnet_name))
-$(eval $(call export_tf_if_set,SUBNET_NAME,subnet_name))
-$(eval $(call export_tf_if_set,VNET_INTEGRATION_SUBNET_NAME,vnet_integration_subnet_name))
-$(eval $(call export_tf_if_set,NSG_NAME,nsg_name))
-$(eval $(call export_tf_if_set,MANAGED_RESOURCE_GROUP,managed_resource_group_name))
-$(eval $(call export_tf_if_set,CLUSTER_VERSION,cluster_version))
-$(eval $(call export_tf_if_set,CLUSTER_CHANNEL,cluster_channel))
-$(eval $(call export_tf_if_set,NODEPOOL_NAME,node_pool_name))
-$(eval $(call export_tf_if_set,NODEPOOL_REPLICAS,node_pool_replicas))
-$(eval $(call export_tf_if_set,NODEPOOL_VM_SIZE,node_pool_vm_size))
-$(eval $(call export_tf_if_set,NODEPOOL_VERSION,node_pool_version))
-$(eval $(call export_tf_if_set,NODEPOOL_CHANNEL,node_pool_channel))
-$(eval $(call export_tf_if_set,API_VISIBILITY,api_visibility))
-$(eval $(call export_tf_if_set,ENABLE_JUMPBOX,enable_jumpbox))
-$(eval $(call export_tf_if_set,JUMP_SSH_SOURCE_PREFIX,jump_ssh_source_prefix))
-
+# Leftover shell TF_VAR_* still reach `terraform test`. Unset the mapped names
+# so CI without cluster tfvars uses Terraform defaults.
 TF_VARS_TO_UNSET := TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_name \
 	TF_VAR_vnet_name TF_VAR_subnet_name TF_VAR_vnet_integration_subnet_name TF_VAR_nsg_name \
 	TF_VAR_managed_resource_group_name TF_VAR_cluster_version TF_VAR_cluster_channel \
 	TF_VAR_node_pool_name TF_VAR_node_pool_replicas TF_VAR_node_pool_vm_size \
-	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility \
-	TF_VAR_enable_jumpbox TF_VAR_jump_ssh_source_prefix TF_VAR_jump_ssh_public_key
+	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility TF_VAR_ingress_visibility \
+	TF_VAR_enable_jumpbox TF_VAR_jump_ssh_source_prefix TF_VAR_jump_ssh_public_key \
+	TF_VAR_jump_ssh_private_key_path
 
-ENABLE_JUMPBOX ?= false
-JUMP_SSH_PUBLIC_KEY_PATH ?= $(ROOT_DIR)/config/jump.pub
-
-.PHONY: help fmt lint test bootstrap init plan apply cluster nodepool all \
-	kubeconfig revoke-credentials versions external-auth external-auth-delete destroy \
-	jump-key jump jump-pub-check
+.PHONY: help fmt lint test bootstrap docs-venv docs-preview docs-serve docs-build \
+	cluster.%
 
 help: ## Show available targets
-	@grep -E '^[a-zA-Z0-9_.-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-22s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_.-]+:.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-28s %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Cluster operations: make cluster.<name>.<operation>"
+	@echo "  init plan apply destroy kubeconfig external-auth external-auth-delete console-secret"
+	@echo "  jump-key jump versions bootstrap private-dns private-dns-delete"
+	@echo "Examples:"
+	@echo "  make cluster.public.init"
+	@echo "  make cluster.public.apply"
+	@echo "  make cluster.private.jump-key"
+
+# Pattern: make cluster.<cluster-name>.<operation>
+cluster.%:
+	@CLUSTER_PROFILE=$$(echo "$@" | cut -d'.' -f2); \
+	OPERATION=$$(echo "$@" | cut -d'.' -f3-); \
+	if [ -z "$$CLUSTER_PROFILE" ] || [ -z "$$OPERATION" ]; then \
+		echo "Usage: make cluster.<name>.<operation>" >&2; \
+		echo "Example: make cluster.public.apply" >&2; \
+		exit 1; \
+	fi; \
+	if [ ! -d "$(ROOT_DIR)/clusters/$$CLUSTER_PROFILE" ]; then \
+		echo "Cluster directory clusters/$$CLUSTER_PROFILE does not exist" >&2; \
+		ls -1 "$(ROOT_DIR)/clusters/" 2>/dev/null | sed 's/^/  - /' || true; \
+		exit 1; \
+	fi; \
+	$(MAKE) -f Makefile.cluster CLUSTER_PROFILE=$$CLUSTER_PROFILE $$OPERATION
 
 fmt: ## Format Terraform and shell scripts
 	terraform -chdir=$(TF_DIR) fmt -recursive
+	terraform -chdir=$(MODULES_DIR)/network fmt
+	terraform -chdir=$(MODULES_DIR)/identities fmt
+	terraform -chdir=$(MODULES_DIR)/cluster fmt
+	terraform -chdir=$(MODULES_DIR)/jumpbox fmt
+	terraform -chdir=$(VERSIONS_TF_DIR) fmt
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci -bn $(SCRIPTS) || echo "shfmt not installed; skipping"
 
 lint: ## Run linters (terraform validate/tflint, shellcheck)
 	terraform -chdir=$(TF_DIR) init -backend=false -input=false
 	terraform -chdir=$(TF_DIR) validate
+	terraform -chdir=$(MODULES_DIR)/network init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/network validate
+	terraform -chdir=$(MODULES_DIR)/identities init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/identities validate
+	terraform -chdir=$(MODULES_DIR)/cluster init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/cluster validate
+	terraform -chdir=$(MODULES_DIR)/jumpbox init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/jumpbox validate
+	terraform -chdir=$(VERSIONS_TF_DIR) init -backend=false -input=false
+	terraform -chdir=$(VERSIONS_TF_DIR) validate
 	@command -v tflint >/dev/null && (cd $(TF_DIR) && tflint --init && tflint) || echo "tflint not installed; skipping"
+	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/network && tflint --init && tflint) || true
+	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/identities && tflint --init && tflint) || true
+	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/cluster && tflint --init && tflint) || true
+	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/jumpbox && tflint --init && tflint) || true
 	@command -v shellcheck >/dev/null && (cd $(SCRIPTS) && shellcheck --external-sources *.sh) || echo "shellcheck not installed; skipping"
 	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci -bn $(SCRIPTS) || true
 
 test: lint ## Run unit tests (terraform test + bats)
 	unset $(TF_VARS_TO_UNSET); \
-	terraform -chdir=$(TF_DIR) test
+	terraform -chdir=$(MODULES_DIR)/network test; \
+	terraform -chdir=$(MODULES_DIR)/identities test; \
+	terraform -chdir=$(MODULES_DIR)/cluster test; \
+	terraform -chdir=$(MODULES_DIR)/jumpbox test; \
+	terraform -chdir=$(TF_DIR) test; \
+	terraform -chdir=$(VERSIONS_TF_DIR) test
 	@command -v bats >/dev/null && bats $(ROOT_DIR)/tests/bats || echo "bats not installed; skipping"
 
 bootstrap: ## Install tools and az aro hcp extension
 	bash $(SCRIPTS)/bootstrap.sh
 
-init: ## Terraform init
-	terraform -chdir=$(TF_DIR) init
+# Documentation (MkDocs Material)
+VENV_DOCS ?= .venv-docs
+DOCS_MKDOCS := $(VENV_DOCS)/bin/mkdocs
+DOCS_PIP := $(VENV_DOCS)/bin/pip
 
-jump-pub-check:
-ifeq ($(ENABLE_JUMPBOX),true)
-	@test -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" || (echo "Missing $(JUMP_SSH_PUBLIC_KEY_PATH). Run: make jump-key" >&2; exit 1)
-endif
+docs-venv: ## Create docs virtualenv and install requirements-docs.txt
+	@if ! command -v python3 >/dev/null 2>&1; then \
+		echo "Error: python3 is required for documentation preview" >&2; \
+		exit 1; \
+	fi
+	@if [ ! -d "$(VENV_DOCS)" ]; then \
+		echo "Creating docs virtualenv at $(VENV_DOCS)..."; \
+		python3 -m venv "$(VENV_DOCS)"; \
+	fi
+	@$(DOCS_PIP) install -q -r requirements-docs.txt
+	@echo "Docs dependencies ready"
 
-plan: init jump-pub-check ## Terraform plan
-ifeq ($(ENABLE_JUMPBOX),true)
-	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
-	terraform -chdir=$(TF_DIR) plan
-else
-	terraform -chdir=$(TF_DIR) plan
-endif
+docs-preview: docs-venv ## Serve docs at http://127.0.0.1:8000/aro-hcp/
+	@echo "Documentation preview: http://127.0.0.1:8000/aro-hcp/"
+	@echo "Press Ctrl+C to stop"
+	@$(DOCS_MKDOCS) serve
 
-apply: init jump-pub-check ## Terraform apply (prereqs + cluster + default node pool)
-ifeq ($(ENABLE_JUMPBOX),true)
-	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
-	terraform -chdir=$(TF_DIR) apply -auto-approve
-else
-	terraform -chdir=$(TF_DIR) apply -auto-approve
-endif
+docs-serve: docs-preview ## Alias for docs-preview
 
-jump-key: ## Generate config/jump ed25519 keypair if missing
-	bash $(SCRIPTS)/jump.sh key
-
-jump: ## Print sshuttle command for the jump VM
-	bash $(SCRIPTS)/jump.sh show
-
-cluster: apply ## Create cluster via Terraform (alias of apply)
-
-nodepool: apply ## Create default node pool via Terraform (alias of apply)
-
-all: bootstrap apply ## Full deploy: prereqs + cluster + default nodepool
-	@echo "Deploy complete. Run: make kubeconfig"
-
-kubeconfig: bootstrap ## Request admin kubeconfig
-	bash $(SCRIPTS)/credentials.sh request
-
-revoke-credentials: bootstrap ## Revoke admin credentials
-	bash $(SCRIPTS)/credentials.sh revoke
-
-versions: bootstrap ## List available OpenShift versions
-	bash $(SCRIPTS)/versions.sh
-
-external-auth: bootstrap kubeconfig ## Configure Entra external auth + console
-	bash $(SCRIPTS)/external-auth.sh create
-
-external-auth-delete: bootstrap ## Remove external auth and Entra app
-	bash $(SCRIPTS)/external-auth.sh delete
-
-destroy: bootstrap init jump-pub-check ## Tear down: state-rm last pool then terraform destroy (OCPBUGS-86702)
-	-bash $(SCRIPTS)/external-auth.sh delete
-ifeq ($(ENABLE_JUMPBOX),true)
-	export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
-	bash $(SCRIPTS)/destroy.sh
-else
-	bash $(SCRIPTS)/destroy.sh
-endif
+docs-build: docs-venv ## Build documentation site (strict link checking)
+	@$(DOCS_MKDOCS) build --strict
+	@echo "Documentation built successfully"

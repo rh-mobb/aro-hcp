@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-JUMP_KEY_PATH="${JUMP_KEY_PATH:-${ROOT_DIR}/config/jump}"
+JUMP_KEY_PATH="${JUMP_KEY_PATH:-${ROOT_DIR}/clusters/${CLUSTER:-public}/jump}"
 
 usage() {
   cat <<EOF
@@ -27,12 +27,11 @@ cmd_key() {
 }
 
 cmd_show() {
-  load_config
   require_cmd terraform
   local ip cmd
   ip="$(tf_output jump_public_ip || true)"
   if [[ -z "${ip}" || "${ip}" == "null" ]]; then
-    die "Jump box is not enabled (ENABLE_JUMPBOX=true and make apply). terraform output jump_public_ip is empty"
+    die "Jump box is not enabled (enable_jumpbox = true in clusters/<name>/terraform.tfvars and make cluster.<name>.apply). terraform output jump_public_ip is empty"
   fi
   cmd="$(tf_output jump_sshuttle_command)"
   printf '%s\n' "${cmd}"

@@ -47,7 +47,6 @@ install_aro_hcp_extension() {
 }
 
 main() {
-  load_config 2>/dev/null || true
   check_tools
   install_aro_hcp_extension
   log "Bootstrap complete"

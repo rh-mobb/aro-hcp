@@ -1,9 +1,13 @@
+output "cluster_name" {
+  value = var.cluster_name
+}
+
 output "resource_group_name" {
-  value = azurerm_resource_group.this.name
+  value = module.network.resource_group_name
 }
 
 output "location" {
-  value = azurerm_resource_group.this.location
+  value = module.network.location
 }
 
 output "subscription_id" {
@@ -11,84 +15,106 @@ output "subscription_id" {
 }
 
 output "subnet_id" {
-  value = azurerm_subnet.worker.id
+  value = module.network.worker_subnet_id
 }
 
 output "vnet_integration_subnet_id" {
-  value = azapi_resource.vnet_integration_subnet.id
+  value = module.network.vnet_integration_subnet_id
 }
 
 output "nsg_id" {
-  value = azurerm_network_security_group.this.id
+  value = module.network.nsg_id
 }
 
 output "vnet_id" {
-  value = azurerm_virtual_network.this.id
+  value = module.network.vnet_id
 }
 
 output "key_vault_name" {
-  value = azurerm_key_vault.this.name
+  value = module.identities.key_vault_name
 }
 
 output "key_vault_id" {
-  value = azurerm_key_vault.this.id
+  value = module.identities.key_vault_id
 }
 
 output "etcd_key_version" {
-  value = azurerm_key_vault_key.etcd_encryption.version
+  value = module.identities.etcd_key_version
 }
 
 output "identity_ids" {
   description = "User-assigned identity resource IDs keyed by operator name."
-  value = {
-    service                  = azurerm_user_assigned_identity.service.id
-    cluster_api_azure        = azurerm_user_assigned_identity.cluster_api_azure.id
-    control_plane            = azurerm_user_assigned_identity.control_plane.id
-    cloud_controller_manager = azurerm_user_assigned_identity.cloud_controller_manager.id
-    ingress                  = azurerm_user_assigned_identity.ingress.id
-    disk_csi_driver          = azurerm_user_assigned_identity.disk_csi_driver.id
-    file_csi_driver          = azurerm_user_assigned_identity.file_csi_driver.id
-    image_registry           = azurerm_user_assigned_identity.image_registry.id
-    cloud_network_config     = azurerm_user_assigned_identity.cloud_network_config.id
-    kms                      = azurerm_user_assigned_identity.kms.id
-    dp_disk_csi_driver       = azurerm_user_assigned_identity.dp_disk_csi_driver.id
-    dp_file_csi_driver       = azurerm_user_assigned_identity.dp_file_csi_driver.id
-    dp_image_registry        = azurerm_user_assigned_identity.dp_image_registry.id
-  }
+  value       = module.identities.identity_ids
 }
 
 output "role_assignment_count" {
-  value = length(azurerm_role_assignment.this)
+  value = module.identities.role_assignment_count
 }
 
 output "role_assignment_specs" {
   description = "Expected role assignment specs for testing."
-  value       = local.assignment_specs
+  value       = module.identities.role_assignment_specs
 }
 
 output "cluster_id" {
   description = "Azure resource ID of the HCP cluster."
-  value       = azapi_resource.hcp_cluster.id
+  value       = module.cluster.cluster_id
 }
 
 output "node_pool_id" {
   description = "Azure resource ID of the default node pool."
-  value       = azapi_resource.node_pool.id
+  value       = module.cluster.node_pool_id
 }
 
 output "managed_resource_group_name" {
   description = "Managed resource group name for the HCP cluster."
-  value       = local.managed_resource_group_name
+  value       = module.cluster.managed_resource_group_name
 }
 
 output "api_url" {
   description = "Kubernetes API URL when reported by the HCP API."
-  value       = try(azapi_resource.hcp_cluster.output.properties.api.url, null)
+  value       = module.cluster.api_url
 }
 
 output "console_url" {
   description = "OpenShift console URL when reported by the HCP API."
-  value       = try(azapi_resource.hcp_cluster.output.properties.console.url, null)
+  value       = module.cluster.console_url
+}
+
+output "cluster_version" {
+  value = var.cluster_version
+}
+
+output "cluster_channel" {
+  value = var.cluster_channel
+}
+
+output "node_pool_name" {
+  value = var.node_pool_name
+}
+
+output "node_pool_replicas" {
+  value = var.node_pool_replicas
+}
+
+output "node_pool_vm_size" {
+  value = var.node_pool_vm_size
+}
+
+output "node_pool_version" {
+  value = var.node_pool_version
+}
+
+output "node_pool_channel" {
+  value = var.node_pool_channel
+}
+
+output "api_visibility" {
+  value = var.api_visibility
+}
+
+output "ingress_visibility" {
+  value = var.ingress_visibility
 }
 
 output "jump_public_ip" {

@@ -1,0 +1,116 @@
+/**
+ * MkDocs Material overrides using Red Hat design tokens (RHDS).
+ * Tokens: https://ux.redhat.com/get-started/developers/tokens/
+ * Brand: https://www.redhat.com/en/about/brand/standards
+ */
+
+/* Light scheme — interface-light collection */
+[data-md-color-scheme="redhat-light"] {
+  color-scheme: light;
+
+  --md-primary-fg-color: var(--rh-color-brand-red-on-light, #ee0000);
+  --md-primary-fg-color--light: var(--rh-color-brand-red-light, #f56e6e);
+  --md-primary-fg-color--dark: var(--rh-color-brand-red-dark, #a60000);
+  --md-accent-fg-color: var(--rh-color-accent-base-on-light, #0066cc);
+  --md-accent-fg-color--transparent: color-mix(
+    in srgb,
+    var(--rh-color-accent-base-on-light, #0066cc) 10%,
+    transparent
+  );
+
+  --md-default-bg-color: var(--rh-color-surface-lightest, #ffffff);
+  --md-default-fg-color: var(--rh-color-text-primary-on-light, #151515);
+  --md-default-fg-color--light: var(--rh-color-text-secondary-on-light, #4d4d4d);
+  --md-default-fg-color--lighter: var(--rh-color-text-secondary-on-light, #707070);
+
+  --md-code-bg-color: var(--rh-color-surface-lighter, #f2f2f2);
+  --md-code-fg-color: var(--rh-color-text-primary-on-light, #151515);
+
+  --md-typeset-a-color: var(--rh-color-accent-base-on-light, #0066cc);
+}
+
+/* Dark scheme — interface-dark collection */
+[data-md-color-scheme="redhat-dark"] {
+  color-scheme: dark;
+
+  --md-primary-fg-color: var(--rh-color-brand-red-on-dark, #ee0000);
+  --md-primary-fg-color--light: var(--rh-color-brand-red-light, #f56e6e);
+  --md-primary-fg-color--dark: var(--rh-color-brand-red-dark, #a60000);
+  --md-accent-fg-color: var(--rh-color-accent-base-on-dark, #92c5f9);
+  --md-accent-fg-color--transparent: color-mix(
+    in srgb,
+    var(--rh-color-accent-base-on-dark, #92c5f9) 12%,
+    transparent
+  );
+
+  --md-default-bg-color: var(--rh-color-surface-darkest, #151515);
+  --md-default-fg-color: var(--rh-color-text-primary-on-dark, #ffffff);
+  --md-default-fg-color--light: var(--rh-color-text-secondary-on-dark, #c7c7c7);
+  --md-default-fg-color--lighter: var(--rh-color-text-secondary-on-dark, #707070);
+
+  --md-code-bg-color: var(--rh-color-surface-darker, #1f1f1f);
+  --md-code-fg-color: var(--rh-color-text-primary-on-dark, #ffffff);
+
+  --md-typeset-a-color: var(--rh-color-accent-base-on-dark, #92c5f9);
+}
+
+/* Typography — Red Hat Display / Text / Mono */
+:root {
+  --md-text-font: var(
+    --rh-font-family-body-text,
+    RedHatText,
+    "Red Hat Text",
+    Helvetica,
+    Arial,
+    sans-serif
+  );
+  --md-code-font: var(
+    --rh-font-family-code,
+    RedHatMono,
+    "Red Hat Mono",
+    "Courier New",
+    Courier,
+    monospace
+  );
+}
+
+.md-typeset {
+  font-family: var(--md-text-font);
+  font-size: var(--rh-font-size-body-text-md, 1rem);
+  line-height: var(--rh-line-height-body-text, 1.5);
+}
+
+.md-typeset :is(h1, h2, h3, h4, h5, h6),
+.md-header__title,
+.md-nav__title {
+  font-family: var(
+    --rh-font-family-heading,
+    RedHatDisplay,
+    "Red Hat Display",
+    Helvetica,
+    Arial,
+    sans-serif
+  );
+  font-weight: var(--rh-font-weight-heading-medium, 500);
+}
+
+.md-typeset code,
+.md-typeset pre code {
+  font-family: var(--md-code-font);
+}
+
+/* Subtle RHDS radius on cards and admonitions */
+.md-typeset .admonition,
+.md-typeset details,
+.md-nav__link--active {
+  border-radius: var(--rh-border-radius-default, 3px);
+}
+
+/* Tables — subtle borders from RHDS */
+.md-typeset table:not([class]) {
+  border: var(--rh-border-width-sm, 1px) solid var(--rh-color-border-subtle-on-light, #c7c7c7);
+}
+
+[data-md-color-scheme="redhat-dark"] .md-typeset table:not([class]) {
+  border-color: var(--rh-color-border-subtle-on-dark, #707070);
+}
