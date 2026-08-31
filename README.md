@@ -1,8 +1,6 @@
 # ARO HCP Reference Deployment
 
-Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI) for Azure prerequisites, the HCP cluster, and the default node pool. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
-
-Based on [bennerv/ARO-HCP 0.0.2](https://github.com/bennerv/ARO-HCP/releases/tag/0.0.2) (`2026-06-30-preview` API).
+Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI) for Azure prerequisites, the HCP cluster, and the default node pool. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth. Targets the `2026-06-30-preview` API.
 
 **Documentation:** [https://rh-mobb.github.io/aro-hcp/](https://rh-mobb.github.io/aro-hcp/) — prerequisites, permissions by step, external-auth, and architecture. Local preview: `make docs-preview`.
 
@@ -125,10 +123,10 @@ make fmt lint test       # before every commit
 - Never commit secrets, operator `clusters/*/terraform.tfvars` (except committed examples), `*.tfstate`, or kubeconfig files
 - See [`AGENTS.md`](AGENTS.md) for agent-specific rules
 
-## Mapping to 0.0.2 guide
+## Operator workflow
 
-| 0.0.2 section | This repo |
-|---------------|-----------|
+| Step | This repo |
+|------|-----------|
 | Install extension | `make bootstrap` |
 | Register RP / create RG | `make cluster.<name>.apply` |
 | Network + KeyVault + identities | `make cluster.<name>.apply` |
@@ -140,7 +138,7 @@ make fmt lint test       # before every commit
 
 ## RBAC note
 
-Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/image-registry). Older Bicep in `references/` assigns some roles at subnet scope — do not copy that pattern.
+Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet scope). Older Bicep in `references/` assigns some roles at subnet scope — do not copy that pattern.
 
 ## Troubleshooting
 

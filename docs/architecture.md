@@ -111,7 +111,7 @@ flowchart TB
 
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
-| `make bootstrap` | `scripts/bootstrap.sh` | Installs the `az aro hcp` CLI extension wheel (0.0.2). No Azure resources. |
+| `make bootstrap` | `scripts/bootstrap.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
 | `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
 | `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
 | `make cluster.<name>.external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
@@ -330,7 +330,7 @@ Terraform resources live under [`modules/`](../modules/) (composed by [`terrafor
 | Key Vault | `cust-kv-` + 13-char random | `azurerm_key_vault.this` | RBAC authorization, public network access, soft-delete 7 days, purge protection off. |
 | Key Vault key | `etcd-data-kms-encryption-key` | `azurerm_key_vault_key.etcd_encryption` | RSA 2048; wrap/unwrap/encrypt/decrypt/sign/verify. |
 | User-assigned identity × 13 | `${cluster_name}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
-| Role assignment × 28 | — | `azurerm_role_assignment.this` | Operator RBAC from the 0.0.2 CLI guide. |
+| Role assignment × 28 | — | `azurerm_role_assignment.this` | Operator RBAC for cluster managed identities. |
 | Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key. |
 | HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
 | Node pool | `np-1` | `azapi_resource.node_pool` | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms this resource first. |
@@ -482,7 +482,7 @@ flowchart TB
 
 ### Built-in role GUIDs
 
-From [`modules/identities/locals.tf`](../modules/identities/locals.tf), aligned with the 0.0.2 `az aro hcp` guide:
+From [`modules/identities/locals.tf`](../modules/identities/locals.tf):
 
 | Local key | Role definition GUID |
 |-----------|----------------------|
@@ -500,7 +500,7 @@ From [`modules/identities/locals.tf`](../modules/identities/locals.tf), aligned 
 
 ### Operator role assignments
 
-Scopes follow **0.0.2**: CAPI, CCM, ingress, file CSI, and image registry are assigned on the **VNet** (and NSG where listed), **not** the worker subnet. Older Bicep in `references/` still uses subnet scope for some of those roles — do not copy it.
+CAPI, CCM, ingress, file CSI, and image registry are assigned on the **VNet** (and NSG where listed), **not** the worker subnet. Older Bicep in `references/` still uses subnet scope for some of those roles — do not copy it.
 
 | Key | Principal | Role | Scope |
 |-----|-----------|------|-------|

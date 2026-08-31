@@ -1,6 +1,6 @@
 # ARO HCP Reference Deployment
 
-Reference Terraform and scripts for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** on Azure (`2026-06-30-preview` API, [bennerv/ARO-HCP 0.0.2](https://github.com/bennerv/ARO-HCP/releases/tag/0.0.2)).
+Reference Terraform and scripts for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** on Azure (`2026-06-30-preview` API).
 
 This repository uses reusable Terraform modules and a **directory-per-cluster** pattern (`clusters/<name>/terraform.tfvars`) for state isolation and lifecycle management.
 
@@ -56,4 +56,3 @@ Open [http://127.0.0.1:8000/aro-hcp/](http://127.0.0.1:8000/aro-hcp/).
 ## Related
 
 - [GitHub repository](https://github.com/rh-mobb/aro-hcp)
-- [bennerv/ARO-HCP CLI guide](https://github.com/bennerv/ARO-HCP/releases/tag/0.0.2)
