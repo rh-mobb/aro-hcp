@@ -50,7 +50,8 @@ make cluster.<name>.external-auth      # Entra + console — required for usable
 Private API or ingress:
 
 ```bash
-make cluster.<name>.jump                # print sshuttle command; start tunnel before oc/console
+make cluster.<name>.sshuttle.connect      # background sshuttle (clusters/<name>/sshuttle.pid)
+make cluster.<name>.sshuttle.disconnect   # stop background sshuttle
 make cluster.<name>.private-dns         # customer Private DNS for api.*.aroapp-hcp.io (after apply)
 # merge clusters/<name>/operator-hosts.snippet into /etc/hosts when public DNS still resolves console/apps
 ```
@@ -81,6 +82,8 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | External auth + console | `cluster.<name>.external-auth` | **Contributor** on cluster (`externalAuths` write) | App create + credential reset — see [Entra guide](../guides/external-auth-entra-id.md) | **cluster-admin** kubeconfig (24h) for console secret |
 | Remove external auth | `cluster.<name>.external-auth-delete` | **Contributor** on cluster | App **owner** or role with `Application.ReadWrite.All` delegated via Azure CLI | Optional admin kubeconfig to delete secret |
 | Print sshuttle command | `cluster.<name>.jump` | None (reads tfvars / outputs) | None | None |
+| Start sshuttle (background) | `cluster.<name>.sshuttle.connect` | None (reads tfvars / outputs; jump VM must exist) | None | None |
+| Stop sshuttle | `cluster.<name>.sshuttle.disconnect` | None | None | None |
 | Customer Private DNS (private API) | `cluster.<name>.private-dns` | **Contributor** on customer RG (Private DNS zone + VNet link + A records); **Reader** on managed RG (`hypershift.local` A record) | None | None |
 | Retry console OAuth secret | `cluster.<name>.console-secret` | None | App credential reset if re-running | **cluster-admin** kubeconfig + sshuttle for private API |
 | Destroy | `cluster.<name>.destroy` | Same as **apply** (delete cluster, network, identities); runs `private-dns-delete` when API is private | Same as **external-auth-delete** if cleaning Entra app manually first | Optional admin kubeconfig if deleting console secret |

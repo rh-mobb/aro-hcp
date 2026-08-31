@@ -25,7 +25,7 @@ help: ## Show available targets
 	@echo ""
 	@echo "Cluster operations: make cluster.<name>.<operation>"
 	@echo "  init plan apply destroy kubeconfig external-auth external-auth-delete console-secret"
-	@echo "  jump-key jump versions bootstrap private-dns private-dns-delete"
+	@echo "  jump-key jump sshuttle.connect sshuttle.disconnect versions bootstrap private-dns private-dns-delete"
 	@echo "Examples:"
 	@echo "  make cluster.public.init"
 	@echo "  make cluster.public.apply"

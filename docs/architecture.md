@@ -398,7 +398,7 @@ Independent of API visibility. When `enable_jumpbox = true`, Terraform module [`
 1. `make cluster.<name>.jump-key` — writes gitignored `clusters/<name>/jump` + `jump.pub` (plan/apply require the `.pub` when jump is on).
 2. Set `enable_jumpbox = true` and `jump_ssh_source_prefix` (your `/32`) in `terraform.tfvars`.
 3. `make cluster.<name>.apply` — provisions subnet, NSG, PIP, NIC, and VM (`Standard_D2s_v6`, admin `fedora`, Trusted Launch). Image default: `/communityGalleries/Fedora-5e266ba4-2250-406d-adad-5d73860d958f/images/Fedora-Cloud-44-x64/versions/latest`.
-4. `make cluster.<name>.jump` — prints the sshuttle command (uses `clusters/<name>/jump` and the VNet `address_prefix`). Run with `--dns` so private API DNS resolves on the laptop.
+4. `make cluster.<name>.jump` — prints the foreground sshuttle command. Prefer `make cluster.<name>.sshuttle.connect` to start sshuttle in the background (`clusters/<name>/sshuttle.pid`); `make cluster.<name>.sshuttle.disconnect` stops it.
 5. `make cluster.<name>.kubeconfig` still uses ARM (`requestAdminCredential`); only `oc` / API hostname traffic needs sshuttle when the API is private.
 6. `make cluster.<name>.private-dns` — creates a customer-RG Private DNS zone (VNet-linked) with `api` → managed `hypershift.local` IP, optional `*.apps` when the ingress router internal LB IP is found, and writes `clusters/<name>/operator-hosts.snippet` for `/etc/hosts` when public DNS still resolves `*.aroapp-hcp.io`.
 
@@ -812,7 +812,7 @@ flowchart TB
 | [`clusters/`](../clusters/) | Per-cluster `terraform.tfvars` + state |
 | [`scripts/destroy.sh`](../scripts/destroy.sh) | State-rm last pool then terraform destroy |
 | [`scripts/cluster.sh`](../scripts/cluster.sh) | Optional CLI cluster show/update/delete |
-| [`scripts/jump.sh`](../scripts/jump.sh) | Jump SSH keygen and sshuttle command |
+| [`scripts/jump.sh`](../scripts/jump.sh) | Jump SSH keygen, sshuttle connect/disconnect, foreground command |
 | [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Extra node pool lifecycle |
 | [`scripts/credentials.sh`](../scripts/credentials.sh) | Admin kubeconfig |
 | [`scripts/external-auth.sh`](../scripts/external-auth.sh) | Entra + external-auth |

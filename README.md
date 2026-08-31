@@ -87,7 +87,9 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.revoke-credentials` | Revoke admin creds |
 | `make cluster.<name>.versions` | List enabled HCP versions for `location` |
 | `make cluster.<name>.jump-key` | Generate `clusters/<name>/jump` + `jump.pub` |
-| `make cluster.<name>.jump` | Print sshuttle command |
+| `make cluster.<name>.jump` | Print sshuttle command (foreground) |
+| `make cluster.<name>.sshuttle.connect` | Start sshuttle in the background (`clusters/<name>/sshuttle.pid`) |
+| `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
 | `make cluster.<name>.external-auth` | Entra app + external-auth + console |
 | `make cluster.<name>.external-auth-delete` | Remove external-auth |
 
@@ -156,8 +158,8 @@ Role assignments follow the **0.0.2 CLI guide** (VNet-scoped CAPI/CCM/ingress/im
 | Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make cluster.<name>.external-auth` |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
-| `oc` cannot reach API hostname | `api_visibility = "Private"` without VNet path or API DNS | `make cluster.<name>.jump` and start sshuttle; `make cluster.<name>.private-dns`; merge `clusters/<name>/operator-hosts.snippet` into `/etc/hosts` if needed |
-| Console unreachable from the internet | `ingress_visibility = "Private"` | Use sshuttle (`make cluster.<name>.jump`); `private-dns` + hosts snippet for console hostname |
+| `oc` cannot reach API hostname | `api_visibility = "Private"` without VNet path or API DNS | `make cluster.<name>.sshuttle.connect`; `make cluster.<name>.private-dns`; merge `clusters/<name>/operator-hosts.snippet` into `/etc/hosts` if needed |
+| Console unreachable from the internet | `ingress_visibility = "Private"` | `make cluster.<name>.sshuttle.connect`; `private-dns` + hosts snippet for console hostname |
 | Console secret apply timeout (private) | `oc` without sshuttle or stale public DNS for `*.aroapp-hcp.io` | sshuttle + `private-dns` + hosts snippet; `make cluster.<name>.console-secret` |
 | plan/apply: missing clusters/<name>/jump.pub | Jump enabled without a key | `make cluster.<name>.jump-key` |
 | Jump SSH timeout | Source IP not in `jump_ssh_source_prefix` | Set prefix to your /32 and re-apply |

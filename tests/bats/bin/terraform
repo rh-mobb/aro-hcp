@@ -57,8 +57,27 @@ JSON
         nsg_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg" ;;
         key_vault_name) echo "cust-kv-test" ;;
         etcd_key_version) echo "abc123" ;;
-        jump_public_ip) echo "" ;;
-        jump_sshuttle_command) echo "" ;;
+        jump_public_ip)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo "203.0.113.10"
+          else
+            echo ""
+          fi
+          ;;
+        jump_ssh_user)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo "fedora"
+          else
+            echo ""
+          fi
+          ;;
+        jump_sshuttle_command)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo 'sshuttle -r fedora@203.0.113.10 --dns -e "ssh -i jump" 10.0.0.0/16'
+          else
+            echo ""
+          fi
+          ;;
       esac
     fi
     ;;

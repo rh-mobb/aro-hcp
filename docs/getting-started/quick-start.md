@@ -80,7 +80,8 @@ cp -r clusters/private clusters/my-private
 make cluster.my-private.jump-key
 # Set jump_ssh_source_prefix to your public /32 in terraform.tfvars (or export TF_VAR_jump_ssh_source_prefix)
 make cluster.my-private.apply
-make cluster.my-private.jump          # sshuttle command — run in a separate terminal before oc / browser
+make cluster.my-private.sshuttle.connect   # background tunnel — before oc / browser
+# Or: make cluster.my-private.jump          # print foreground sshuttle command
 make cluster.my-private.kubeconfig
 make cluster.my-private.private-dns   # customer Private DNS for api.*.aroapp-hcp.io (+ apps when router IP is known)
 # Merge clusters/my-private/operator-hosts.snippet into /etc/hosts if public DNS still resolves console/apps
@@ -97,7 +98,7 @@ make cluster.my-cluster.external-auth-delete
 make cluster.my-cluster.destroy
 ```
 
-For private clusters, start sshuttle (`make cluster.<name>.jump`) before `external-auth-delete` if `oc` cannot reach the API.
+For private clusters, run `make cluster.<name>.sshuttle.connect` before `external-auth-delete` if `oc` cannot reach the API. Run `make cluster.<name>.sshuttle.disconnect` when finished.
 
 ## Related
 

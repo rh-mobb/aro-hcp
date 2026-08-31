@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `make cluster.<profile>.sshuttle.connect` / `sshuttle.disconnect` / `sshuttle.status` — background sshuttle via jump box (`clusters/<profile>/sshuttle.pid`)
 - Per-cluster operator layout: `clusters/<profile>/terraform.tfvars`, local state, and `make cluster.<profile>.<operation>` via `Makefile.cluster`
 - Terraform modules (`modules/network`, `identities`, `cluster`, `jumpbox`) with root composition in `terraform/`
 - Example profiles [`clusters/public`](clusters/public/) and [`clusters/private`](clusters/private/) (public vs private API/ingress + jump box)

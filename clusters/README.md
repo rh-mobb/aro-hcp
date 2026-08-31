@@ -29,7 +29,7 @@ When `enable_jumpbox = true`:
 make cluster.private.jump-key   # writes clusters/private/jump + jump.pub
 # jump_ssh_source_prefix in terraform.tfvars or TF_VAR_jump_ssh_source_prefix (your /32)
 make cluster.private.apply
-make cluster.private.jump        # sshuttle — required for oc and private API DNS from laptop
+make cluster.private.sshuttle.connect  # or jump (print foreground command)
 make cluster.private.kubeconfig
 make cluster.private.private-dns # customer Private DNS zone in the cluster RG
 make cluster.private.external-auth

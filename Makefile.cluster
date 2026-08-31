@@ -17,7 +17,7 @@ export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
 # GNU Make exports recipe variables; do not let the profile name shadow scripts' CLUSTER_NAME.
 unexport CLUSTER_NAME
 
-.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump versions bootstrap private-dns private-dns-delete
+.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions bootstrap private-dns private-dns-delete
 
 check-cluster:
 	@test -d "$(CLUSTER_DIR)" || (echo "Missing cluster directory $(CLUSTER_DIR). See clusters/README.md" >&2; exit 1)
@@ -93,6 +93,18 @@ jump-key: check-cluster
 jump: check-tfvars
 	@export TFVARS="$(TFVARS)" JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
 	bash $(SCRIPTS)/jump.sh show
+
+sshuttle.connect: check-tfvars
+	@export TFVARS="$(TFVARS)" JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh connect
+
+sshuttle.disconnect: check-cluster
+	@export JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh disconnect
+
+sshuttle.status: check-cluster
+	@export JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh status
 
 versions: check-tfvars
 	@export TFVARS="$(TFVARS)"; \
