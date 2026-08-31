@@ -87,7 +87,7 @@ flowchart TB
     start["cp -r clusters/public clusters/my-cluster"] --> all["make cluster.my-cluster.apply"]
 
     subgraph allSteps["make cluster.<name>.apply"]
-        boot["bootstrap.sh"] --> apply["terraform apply"]
+        setup["setup.sh"] --> apply["terraform apply"]
         apply --> cluster["module.cluster azapi hcp_cluster"]
         cluster --> nodepool["module.cluster azapi node_pool"]
     end
@@ -111,7 +111,7 @@ flowchart TB
 
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
-| `make bootstrap` | `scripts/bootstrap.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
+| `make setup` | `scripts/setup.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
 | `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
 | `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
 | `make cluster.<name>.external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
@@ -239,7 +239,7 @@ Summary — full Azure action list and split-role options: [Full-stack deploymen
 
 | Target | Azure RBAC (minimum) | Entra directory | OpenShift |
 |--------|----------------------|-----------------|-----------|
-| `make bootstrap` | None | None | None |
+| `make setup` | None | None | None |
 | `make cluster.<name>.jump-key` | None | None | None |
 | `make cluster.<name>.versions` | Reader on subscription | None | None |
 | `make cluster.<name>.init` | None | None | None |

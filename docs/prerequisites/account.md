@@ -1,6 +1,6 @@
 # Account Prerequisites
 
-Layer **0** — required before any `make cluster.<name>.*` command that touches Azure (except local-only targets such as `jump-key` or `bootstrap`).
+Layer **0** — required before any `make cluster.<name>.*` command that touches Azure (except local-only targets such as `jump-key` or `setup`).
 
 ## Azure subscription
 
@@ -74,7 +74,7 @@ See [Full-stack deployment — permissions by step](full-stack.md#permissions-by
 | Tool | Minimum | Purpose |
 |------|---------|---------|
 | Azure CLI | >= 2.67.0 | Azure + Entra (`az ad`) |
-| `az aro hcp` extension | via `make bootstrap` | Credentials, external-auth, extra node pools |
+| `az aro hcp` extension | via `make setup` | Credentials, external-auth, extra node pools |
 | Terraform | >= 1.9 | Infrastructure |
 | `jq` | any recent | Scripts, credential parsing |
 | `oc` | >= 4.20 | External-auth console secret, optional RBAC |
@@ -84,7 +84,7 @@ See [Full-stack deployment — permissions by step](full-stack.md#permissions-by
 Install the CLI extension:
 
 ```bash
-make bootstrap
+make setup
 ```
 
 ## Firewall allowlist

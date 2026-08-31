@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - MkDocs theme: use Material `default` / `slate` palettes (match ROSA validated-pattern docs) instead of custom RHDS token overrides
+- `make bootstrap` renamed to `make setup` (`scripts/setup.sh`); `make bootstrap` remains as a deprecated alias
 - Scripts read cluster config from Terraform outputs with fallback to `clusters/<profile>/terraform.tfvars`; per-cluster `TF_DATA_DIR`
 - `destroy.sh`: correct state path for node-pool state-rm (OCPBUGS-86702); wait and retry when cluster is already deleting in Azure
 - `external-auth-delete` warns and continues if `oc` cannot reach private API

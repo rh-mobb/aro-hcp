@@ -12,7 +12,7 @@ Documentation: **[`docs/README.md`](docs/README.md)** (index) · **[Architecture
 
 ```text
 make cluster.public.apply
-  ├── bootstrap.sh          # az aro hcp CLI extension (credentials / extra pools)
+  ├── setup.sh              # az aro hcp CLI extension (credentials / extra pools)
   └── terraform apply       # modules: network, identities, cluster (+ optional jumpbox)
 ```
 
@@ -33,7 +33,7 @@ Complete **[Account prerequisites](docs/prerequisites/account.md)** before deplo
 | ARO HCP preview **allow-list** | Not an Azure role — subscription must be enrolled |
 | **Contributor + User Access Administrator** on customer RG | Minimum for `make cluster.<name>.apply` (Terraform writes 28 role assignments). **Owner** also works but is broader |
 | **`make cluster.<name>.external-auth` only** | Entra app registration rights — **Application Administrator not required** when users may register apps; see [External auth guide](docs/guides/external-auth-entra-id.md) |
-| Tools | Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20`, optional `sshuttle`, `make bootstrap` for `az aro hcp` |
+| Tools | Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20`, optional `sshuttle`, `make setup` for `az aro hcp` |
 
 Per-target permission matrix: **[Full-stack deployment](docs/prerequisites/full-stack.md#permissions-by-deployment-step)**.
 
@@ -53,7 +53,7 @@ See **[Quick start guide](docs/getting-started/quick-start.md)**. Minimal path:
 cp -r clusters/public clusters/my-cluster
 # Edit clusters/my-cluster/terraform.tfvars (location, cluster_name, versions)
 
-make bootstrap
+make setup
 make cluster.my-cluster.init
 make cluster.my-cluster.plan
 make cluster.my-cluster.apply           # prereqs + cluster + default nodepool (~30-60 min)
@@ -71,7 +71,7 @@ Global:
 |--------|-------------|
 | `make help` | List targets |
 | `make fmt` / `lint` / `test` | Format, lint, test |
-| `make bootstrap` | Install `az aro hcp` extension |
+| `make setup` | Install `az aro hcp` extension |
 
 Per cluster (`<name>` = directory under `clusters/`):
 
@@ -127,7 +127,7 @@ make fmt lint test       # before every commit
 
 | Step | This repo |
 |------|-----------|
-| Install extension | `make bootstrap` |
+| Install extension | `make setup` |
 | Register RP / create RG | `make cluster.<name>.apply` |
 | Network + KeyVault + identities | `make cluster.<name>.apply` |
 | Cluster create | `make cluster.<name>.apply` (AzAPI in `modules/cluster`) |

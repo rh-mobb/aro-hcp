@@ -49,7 +49,7 @@ install_aro_hcp_extension() {
 main() {
   check_tools
   install_aro_hcp_extension
-  log "Bootstrap complete"
+  log "Setup complete"
 }
 
 main "$@"
