@@ -19,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `hack/versions` — plan-time OpenShift version validation per region
 
 ### Changed
-- `make` interface: `CLUSTER_PROFILE` replaces exported `CLUSTER_NAME` (fixes kubeconfig/scripts resolving Azure name as profile dir)
+- MkDocs theme: use Material `default` / `slate` palettes (match ROSA validated-pattern docs) instead of custom RHDS token overrides
 - Scripts read cluster config from Terraform outputs with fallback to `clusters/<profile>/terraform.tfvars`; per-cluster `TF_DATA_DIR`
 - `destroy.sh`: correct state path for node-pool state-rm (OCPBUGS-86702); wait and retry when cluster is already deleting in Azure
 - `external-auth-delete` warns and continues if `oc` cannot reach private API

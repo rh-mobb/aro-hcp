@@ -6,15 +6,8 @@ repo_name: rh-mobb/aro-hcp
 edit_uri: edit/main/docs/
 copyright: Community reference deployment documentation (rh-mobb/aro-hcp).
 
-# RHDS tokens + fonts (Red Hat CDN). See docs/stylesheets/redhat-brand.css.
-extra_css:
-  - https://www.redhatstatic.com/dssf-001/v2/@rhds/tokens@3.1.0/css/global.css
-  - https://www.redhatstatic.com/dssf-001/v2/@redhat/redhat-font@4.1.0/font.min.css
-  - stylesheets/redhat-brand.css
-
 theme:
   name: material
-  custom_dir: docs/overrides
   features:
     - navigation.tabs
     - navigation.sections
@@ -26,16 +19,16 @@ theme:
     - content.action.edit
   palette:
     - media: "(prefers-color-scheme: light)"
-      scheme: redhat-light
-      primary: custom
-      accent: custom
+      scheme: default
+      primary: red
+      accent: red
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
-      scheme: redhat-dark
-      primary: custom
-      accent: custom
+      scheme: slate
+      primary: red
+      accent: red
       toggle:
         icon: material/brightness-4
         name: Switch to light mode

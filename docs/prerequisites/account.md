@@ -74,7 +74,7 @@ See [Full-stack deployment — permissions by step](full-stack.md#permissions-by
 | Tool | Minimum | Purpose |
 |------|---------|---------|
 | Azure CLI | >= 2.67.0 | Azure + Entra (`az ad`) |
-| `az aro hcp` extension | 0.0.2 (via `make bootstrap`) | Credentials, external-auth, extra node pools |
+| `az aro hcp` extension | via `make bootstrap` | Credentials, external-auth, extra node pools |
 | Terraform | >= 1.9 | Infrastructure |
 | `jq` | any recent | Scripts, credential parsing |
 | `oc` | >= 4.20 | External-auth console secret, optional RBAC |

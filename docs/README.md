@@ -1,6 +1,6 @@
 # Documentation
 
-Published site: [https://rh-mobb.github.io/aro-hcp/](https://rh-mobb.github.io/aro-hcp/) (MkDocs Material + [Red Hat design tokens](https://ux.redhat.com/get-started/developers/tokens/), deployed from `main` via GitHub Actions). Local preview: `make docs-preview`.
+Published site: [https://rh-mobb.github.io/aro-hcp/](https://rh-mobb.github.io/aro-hcp/) (MkDocs Material, deployed from `main` via GitHub Actions). Local preview: `make docs-preview`.
 
 Site home: [index.md](index.md). Start with [Prerequisites](prerequisites/index.md), then follow [Quick start](getting-started/quick-start.md).
 
