@@ -17,7 +17,7 @@ TF_VARS_TO_UNSET := TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_na
 	TF_VAR_enable_jumpbox TF_VAR_jump_ssh_source_prefix TF_VAR_jump_ssh_public_key \
 	TF_VAR_jump_ssh_private_key_path
 
-.PHONY: help fmt lint test bootstrap docs-venv docs-preview docs-serve docs-build \
+.PHONY: help fmt lint test setup bootstrap docs-venv docs-preview docs-serve docs-build \
 	cluster.%
 
 help: ## Show available targets
@@ -25,7 +25,7 @@ help: ## Show available targets
 	@echo ""
 	@echo "Cluster operations: make cluster.<name>.<operation>"
 	@echo "  init plan apply destroy kubeconfig external-auth external-auth-delete console-secret"
-	@echo "  jump-key jump sshuttle.connect sshuttle.disconnect versions bootstrap private-dns private-dns-delete"
+	@echo "  jump-key jump sshuttle.connect sshuttle.disconnect versions setup private-dns private-dns-delete"
 	@echo "Examples:"
 	@echo "  make cluster.public.init"
 	@echo "  make cluster.public.apply"
@@ -83,8 +83,12 @@ test: lint ## Run unit tests (terraform test + bats)
 	terraform -chdir=$(VERSIONS_TF_DIR) test
 	@command -v bats >/dev/null && bats $(ROOT_DIR)/tests/bats || echo "bats not installed; skipping"
 
-bootstrap: ## Install tools and az aro hcp extension
-	bash $(SCRIPTS)/bootstrap.sh
+setup: ## Install tools and az aro hcp extension (once per machine)
+	bash $(SCRIPTS)/setup.sh
+
+bootstrap: ## Deprecated: use make setup
+	@echo "WARNING: make bootstrap is deprecated; use make setup" >&2
+	$(MAKE) setup
 
 # Documentation (MkDocs Material)
 VENV_DOCS ?= .venv-docs

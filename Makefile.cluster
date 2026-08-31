@@ -17,7 +17,7 @@ export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
 # GNU Make exports recipe variables; do not let the profile name shadow scripts' CLUSTER_NAME.
 unexport CLUSTER_NAME
 
-.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions bootstrap private-dns private-dns-delete
+.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions setup bootstrap private-dns private-dns-delete
 
 check-cluster:
 	@test -d "$(CLUSTER_DIR)" || (echo "Missing cluster directory $(CLUSTER_DIR). See clusters/README.md" >&2; exit 1)
@@ -63,26 +63,30 @@ destroy: init jump-pub-check
 	fi; \
 	bash $(SCRIPTS)/destroy.sh
 
-bootstrap:
-	bash $(SCRIPTS)/bootstrap.sh
+setup:
+	bash $(SCRIPTS)/setup.sh
 
-kubeconfig: bootstrap check-tfvars
+bootstrap:
+	@echo "WARNING: bootstrap is deprecated; use setup (make setup from repo root)" >&2
+	bash $(SCRIPTS)/setup.sh
+
+kubeconfig: setup check-tfvars
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/credentials.sh request
 
-revoke-credentials: bootstrap check-tfvars
+revoke-credentials: setup check-tfvars
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/credentials.sh revoke
 
-external-auth: bootstrap kubeconfig
+external-auth: setup kubeconfig
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/external-auth.sh create
 
-external-auth-delete: bootstrap check-tfvars
+external-auth-delete: setup check-tfvars
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/external-auth.sh delete
 
-console-secret: bootstrap kubeconfig
+console-secret: setup kubeconfig
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/external-auth.sh console-secret
 

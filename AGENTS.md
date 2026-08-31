@@ -49,7 +49,7 @@ When sources disagree:
 
 ```bash
 cp -r clusters/public clusters/my-cluster   # edit terraform.tfvars
-make bootstrap
+make setup
 make cluster.my-cluster.apply               # terraform apply (cluster + node pool)
 make cluster.my-cluster.kubeconfig          # admin creds (24h TTL)
 make cluster.my-cluster.external-auth       # Entra + console (required for a usable console)

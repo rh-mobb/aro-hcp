@@ -14,7 +14,7 @@ Complete [Account prerequisites](../prerequisites/account.md) first:
 Install tools:
 
 ```bash
-make bootstrap    # az aro hcp extension
+make setup    # az aro hcp extension
 ```
 
 ## 1. Configure cluster

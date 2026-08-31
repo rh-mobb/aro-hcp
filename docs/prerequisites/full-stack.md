@@ -39,7 +39,7 @@ You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `c
 ## Deployment workflow
 
 ```bash
-make bootstrap                         # once per machine — az aro hcp extension
+make setup                         # once per machine — az aro hcp extension
 make cluster.<name>.init
 make cluster.<name>.plan               # validates OpenShift versions for location
 make cluster.<name>.apply              # ~30–60 min
@@ -71,7 +71,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 
 | Step | `make` target | Azure RBAC (minimum) | Entra directory | OpenShift |
 |------|---------------|----------------------|-----------------|-----------|
-| Install CLI extension | `bootstrap` | None | None | None |
+| Install CLI extension | `setup` | None | None | None |
 | Generate jump SSH key | `cluster.<name>.jump-key` | None | None | None |
 | List enabled versions | `cluster.<name>.versions` | **Reader** on subscription (read `hcpOpenShiftVersions`) | None | None |
 | Terraform init | `cluster.<name>.init` | None (local providers) | None | None |
