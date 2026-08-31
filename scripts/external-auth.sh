@@ -114,6 +114,20 @@ create_console_secret() {
     --dry-run=client -o yaml | oc apply -f -
 }
 
+apply_console_secret_with_retry() {
+  local attempts=0
+  local max_attempts=5
+  while [[ "${attempts}" -lt "${max_attempts}" ]]; do
+    if create_console_secret; then
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    log "WARN: console secret apply failed (attempt ${attempts}/${max_attempts}); retrying in 15s (private API: ensure sshuttle + operator-hosts.snippet in /etc/hosts)"
+    sleep 15
+  done
+  die "Failed to apply console secret after ${max_attempts} attempts"
+}
+
 cmd_create() {
   cluster_exists || die "Cluster ${CLUSTER_NAME} does not exist"
   local callback
@@ -125,9 +139,9 @@ cmd_create() {
   create_external_auth
 
   if [[ -f "${KUBECONFIG_PATH}" ]]; then
-    create_console_secret
+    apply_console_secret_with_retry
   else
-    log "WARN: KUBECONFIG not found at ${KUBECONFIG_PATH}; run make kubeconfig then re-run secret step"
+    log "WARN: KUBECONFIG not found at ${KUBECONFIG_PATH}; run make cluster.<name>.kubeconfig then re-run secret step"
     log "Or: oc create secret generic ${EXTERNAL_AUTH_NAME}-console-openshift-console -n openshift-config --from-literal=client""Secret=<value>"
   fi
 
@@ -154,7 +168,9 @@ cmd_delete() {
 
   if [[ -f "${KUBECONFIG_PATH}" ]] && command -v oc >/dev/null 2>&1; then
     export KUBECONFIG="${KUBECONFIG_PATH}"
-    oc delete secret "${EXTERNAL_AUTH_NAME}-console-openshift-console" -n openshift-config --ignore-not-found
+    if ! oc delete secret "${EXTERNAL_AUTH_NAME}-console-openshift-console" -n openshift-config --ignore-not-found --request-timeout=30s 2>/dev/null; then
+      log "WARN: Could not delete console secret (private API may need sshuttle); continuing"
+    fi
   fi
 
   if load_state && [[ -n "${CLIENT_ID:-}" ]]; then
@@ -238,11 +254,17 @@ cmd_login() {
 }
 
 main() {
-  load_config
+  load_tf
   require_cmd az
   local cmd="${1:-}"
   case "${cmd}" in
     create) cmd_create ;;
+    console-secret)
+      load_state || die "Run external-auth create first"
+      create_entra_credential
+      apply_console_secret_with_retry
+      unset ENTRA_APP_CRED
+      ;;
     show) cmd_show ;;
     delete) cmd_delete ;;
     login) cmd_login ;;

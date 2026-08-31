@@ -5,15 +5,15 @@
 
 resource "azapi_resource" "hcp_cluster" {
   type                      = "Microsoft.RedHatOpenShift/hcpOpenShiftClusters@${local.hcp_api_version}"
-  parent_id                 = azurerm_resource_group.this.id
+  parent_id                 = var.resource_group_id
   name                      = var.cluster_name
-  location                  = azurerm_resource_group.this.location
+  location                  = var.location
   schema_validation_enabled = false
   tags                      = local.tags
 
   identity {
     type         = "UserAssigned"
-    identity_ids = tolist(local.cluster_identity_ids)
+    identity_ids = tolist(var.cluster_identity_ids)
   }
 
   body = {
@@ -37,10 +37,10 @@ resource "azapi_resource" "hcp_cluster" {
             encryptionType = "KMS"
             kms = {
               activeKey = {
-                name    = local.etcd_encryption_key_name
-                version = azurerm_key_vault_key.etcd_encryption.version
+                name    = var.etcd_encryption_key_name
+                version = var.etcd_key_version
               }
-              vaultName  = azurerm_key_vault.this.name
+              vaultName  = var.key_vault_name
               visibility = var.vault_visibility
             }
           }
@@ -49,20 +49,23 @@ resource "azapi_resource" "hcp_cluster" {
       api = {
         visibility = var.api_visibility
       }
+      ingress = {
+        type = var.ingress_visibility
+      }
       clusterImageRegistry = {
         state = var.cluster_image_registry_state
       }
       platform = {
         managedResourceGroup    = local.managed_resource_group_name
-        subnetId                = azurerm_subnet.worker.id
-        vnetIntegrationSubnetId = azapi_resource.vnet_integration_subnet.id
+        subnetId                = var.worker_subnet_id
+        vnetIntegrationSubnetId = var.vnet_integration_subnet_id
         outboundType            = var.outbound_type
-        networkSecurityGroupId  = azurerm_network_security_group.this.id
+        networkSecurityGroupId  = var.nsg_id
         operatorsAuthentication = {
           userAssignedIdentities = {
-            controlPlaneOperators  = local.control_plane_operators
-            dataPlaneOperators     = local.data_plane_operators
-            serviceManagedIdentity = azurerm_user_assigned_identity.service.id
+            controlPlaneOperators  = var.control_plane_operators
+            dataPlaneOperators     = var.data_plane_operators
+            serviceManagedIdentity = var.service_identity_id
           }
         }
       }
@@ -77,19 +80,19 @@ resource "azapi_resource" "hcp_cluster" {
     delete = "120m"
   }
 
-  depends_on = [
-    azurerm_role_assignment.this,
-    azurerm_key_vault_key.etcd_encryption,
-    azapi_resource.vnet_integration_subnet,
-    azurerm_subnet_network_security_group_association.worker,
-  ]
+  lifecycle {
+    precondition {
+      condition     = contains(local.hcp_cluster_streams, var.cluster_version)
+      error_message = "cluster_version ${var.cluster_version} is not an enabled ${var.cluster_channel} stream in ${var.location}. Available: ${join(", ", local.hcp_cluster_streams)}."
+    }
+  }
 }
 
 resource "azapi_resource" "node_pool" {
   type                      = "Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools@${local.hcp_api_version}"
   parent_id                 = azapi_resource.hcp_cluster.id
   name                      = var.node_pool_name
-  location                  = azurerm_resource_group.this.location
+  location                  = var.location
   schema_validation_enabled = false
   tags                      = local.tags
 
@@ -100,7 +103,7 @@ resource "azapi_resource" "node_pool" {
         channelGroup = var.node_pool_channel
       }
       platform = {
-        subnetId = azurerm_subnet.worker.id
+        subnetId = var.worker_subnet_id
         vmSize   = var.node_pool_vm_size
         osDisk = {
           sizeGiB                = var.node_pool_disk_size_gib
@@ -115,5 +118,12 @@ resource "azapi_resource" "node_pool" {
     create = "90m"
     update = "90m"
     delete = "90m"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = contains(local.hcp_node_pool_versions, var.node_pool_version)
+      error_message = "node_pool_version ${var.node_pool_version} is not an enabled ${var.node_pool_channel} version in ${var.location}. Available: ${join(", ", local.hcp_node_pool_versions)}."
+    }
   }
 }

@@ -1,0 +1,33 @@
+# Operator config for Terraform. Copy to clusters/<name>/terraform.tfvars (gitignored except examples).
+# make cluster.<name>.plan/apply/destroy pass this file with -var-file.
+
+location     = "uksouth"
+cluster_name = "my-cluster"
+
+# Optional. Omit to derive from cluster_name:
+#   resource_group_name          = "<cluster_name>-rg"
+#   managed_resource_group_name  = "<cluster_name>-managed"
+#   vnet_name                    = "<cluster_name>-vnet"
+#   subnet_name                  = "<cluster_name>-worker"
+#   vnet_integration_subnet_name = "<cluster_name>-integration"
+#   nsg_name                     = "<cluster_name>-nsg"
+
+# Cluster stream (X.Y). Plan fails if this stream is not enabled in location.
+cluster_version = "4.22"
+cluster_channel = "stable"
+
+# Default node pool
+node_pool_name     = "np-1"
+node_pool_replicas = 2
+node_pool_vm_size  = "Standard_D4s_v6"
+node_pool_version  = "4.22.9"
+node_pool_channel  = "stable"
+
+# Create-time only; cannot change in place.
+api_visibility     = "Public"
+ingress_visibility = "Public"
+
+# Optional Fedora jump VM + public IP for sshuttle into the VNet.
+enable_jumpbox = false
+# Required when enable_jumpbox is true. SSH 22 from this CIDR only (use your /32).
+# jump_ssh_source_prefix = "1.2.3.4/32"

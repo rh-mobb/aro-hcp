@@ -88,7 +88,7 @@ cmd_revoke() {
 }
 
 main() {
-  load_config
+  load_tf
   require_cmd az
   require_cmd jq
   local cmd="${1:-}"

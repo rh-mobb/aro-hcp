@@ -1,0 +1,119 @@
+SHELL := /bin/bash
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+TF_DIR := $(ROOT_DIR)/terraform
+SCRIPTS := $(ROOT_DIR)/scripts
+
+# Profile directory name under clusters/ (e.g. public, private). Not the Azure cluster_name.
+CLUSTER_PROFILE ?= $(error CLUSTER_PROFILE must be set)
+CLUSTER_DIR := $(ROOT_DIR)/clusters/$(CLUSTER_PROFILE)
+TFVARS := $(CLUSTER_DIR)/terraform.tfvars
+TF_STATE := $(CLUSTER_DIR)/infrastructure.tfstate
+JUMP_SSH_PUBLIC_KEY_PATH := $(CLUSTER_DIR)/jump.pub
+JUMP_SSH_PRIVATE_KEY_PATH := $(CLUSTER_DIR)/jump
+
+export TFVARS
+export CLUSTER := $(CLUSTER_PROFILE)
+export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
+# GNU Make exports recipe variables; do not let the profile name shadow scripts' CLUSTER_NAME.
+unexport CLUSTER_NAME
+
+.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions bootstrap private-dns private-dns-delete
+
+check-cluster:
+	@test -d "$(CLUSTER_DIR)" || (echo "Missing cluster directory $(CLUSTER_DIR). See clusters/README.md" >&2; exit 1)
+
+check-tfvars: check-cluster
+	@test -f "$(TFVARS)" || (echo "Missing $(TFVARS)" >&2; exit 1)
+
+jump-pub-check: check-tfvars
+	@if grep -Eq '^[[:space:]]*enable_jumpbox[[:space:]]*=[[:space:]]*true' "$(TFVARS)"; then \
+		test -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" || (echo "Missing $(JUMP_SSH_PUBLIC_KEY_PATH). Run: make cluster.$(CLUSTER_PROFILE).jump-key" >&2; exit 1); \
+		if ! grep -Eq '^[[:space:]]*jump_ssh_source_prefix[[:space:]]*=' "$(TFVARS)" && [ -z "$${TF_VAR_jump_ssh_source_prefix:-}" ]; then \
+			echo "Missing jump_ssh_source_prefix in $(TFVARS) or TF_VAR_jump_ssh_source_prefix. Set your public /32 before apply." >&2; \
+			exit 1; \
+		fi; \
+	fi
+
+init: check-tfvars
+	terraform -chdir=$(TF_DIR) init -reconfigure -input=false \
+		-backend-config="path=$(TF_STATE)"
+
+plan: init jump-pub-check
+	@if [ -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" ]; then \
+		export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
+		export TF_VAR_jump_ssh_private_key_path="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	fi; \
+	terraform -chdir=$(TF_DIR) plan -var-file="$(TFVARS)"
+
+apply: init jump-pub-check
+	@if [ -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" ]; then \
+		export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
+		export TF_VAR_jump_ssh_private_key_path="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	fi; \
+	terraform -chdir=$(TF_DIR) apply -auto-approve -var-file="$(TFVARS)"
+
+destroy: init jump-pub-check
+	@if [ -f "$(JUMP_SSH_PUBLIC_KEY_PATH)" ]; then \
+		export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
+		export TF_VAR_jump_ssh_private_key_path="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	fi; \
+	if grep -Eq '^[[:space:]]*api_visibility[[:space:]]*=[[:space:]]*"Private"' "$(TFVARS)" 2>/dev/null; then \
+		export TFVARS="$(TFVARS)"; \
+		bash $(SCRIPTS)/private-dns.sh delete || true; \
+	fi; \
+	bash $(SCRIPTS)/destroy.sh
+
+bootstrap:
+	bash $(SCRIPTS)/bootstrap.sh
+
+kubeconfig: bootstrap check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/credentials.sh request
+
+revoke-credentials: bootstrap check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/credentials.sh revoke
+
+external-auth: bootstrap kubeconfig
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/external-auth.sh create
+
+external-auth-delete: bootstrap check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/external-auth.sh delete
+
+console-secret: bootstrap kubeconfig
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/external-auth.sh console-secret
+
+jump-key: check-cluster
+	@export JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh key
+
+jump: check-tfvars
+	@export TFVARS="$(TFVARS)" JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh show
+
+sshuttle.connect: check-tfvars
+	@export TFVARS="$(TFVARS)" JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh connect
+
+sshuttle.disconnect: check-cluster
+	@export JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh disconnect
+
+sshuttle.status: check-cluster
+	@export JUMP_KEY_PATH="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
+	bash $(SCRIPTS)/jump.sh status
+
+versions: check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/versions.sh
+
+private-dns: check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/private-dns.sh create
+
+private-dns-delete: check-tfvars
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/private-dns.sh delete

@@ -1,3 +1,7 @@
+locals {
+  etcd_encryption_key_name = "etcd-data-kms-encryption-key"
+}
+
 resource "random_string" "key_vault_suffix" {
   length  = 13
   lower   = true
@@ -8,8 +12,8 @@ resource "random_string" "key_vault_suffix" {
 
 resource "azurerm_key_vault" "this" {
   name                          = "cust-kv-${random_string.key_vault_suffix.result}"
-  location                      = azurerm_resource_group.this.location
-  resource_group_name           = azurerm_resource_group.this.name
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
   tenant_id                     = data.azurerm_client_config.current.tenant_id
   sku_name                      = "standard"
   soft_delete_retention_days    = 7
@@ -32,7 +36,7 @@ resource "azurerm_role_assignment" "deployer_key_vault_admin" {
 resource "azurerm_key_vault_key" "etcd_encryption" {
   depends_on = [azurerm_role_assignment.deployer_key_vault_admin]
 
-  name         = "etcd-data-kms-encryption-key"
+  name         = local.etcd_encryption_key_name
   key_vault_id = azurerm_key_vault.this.id
   key_type     = "RSA"
   key_size     = 2048
@@ -45,5 +49,3 @@ resource "azurerm_key_vault_key" "etcd_encryption" {
     "wrapKey",
   ]
 }
-
-data "azurerm_client_config" "current" {}

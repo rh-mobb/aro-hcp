@@ -16,7 +16,7 @@ EOF
 
 cmd_create() {
   if [[ "${NAME:-${NODEPOOL_NAME}}" == "${NODEPOOL_NAME}" ]]; then
-    log "WARN: default node pool ${NODEPOOL_NAME} is Terraform-managed; prefer make apply. CLI create is for extra pools (NAME=...)."
+    log "WARN: default node pool ${NODEPOOL_NAME} is Terraform-managed; prefer make cluster.<name>.apply. CLI create is for extra pools (NAME=...)."
   fi
   local name="${NAME:-${NODEPOOL_NAME}}"
   local replicas="${REPLICAS:-${NODEPOOL_REPLICAS}}"
@@ -85,7 +85,7 @@ cmd_list() {
 }
 
 main() {
-  load_config
+  load_tf
   require_cmd az
   local cmd="${1:-}"
   case "${cmd}" in

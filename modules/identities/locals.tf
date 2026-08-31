@@ -1,95 +1,39 @@
-resource "azurerm_user_assigned_identity" "service" {
-  name                = local.identity_names.service
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "cluster_api_azure" {
-  name                = local.identity_names.cluster_api_azure
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "control_plane" {
-  name                = local.identity_names.control_plane
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "cloud_controller_manager" {
-  name                = local.identity_names.cloud_controller_manager
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "ingress" {
-  name                = local.identity_names.ingress
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "disk_csi_driver" {
-  name                = local.identity_names.disk_csi_driver
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "file_csi_driver" {
-  name                = local.identity_names.file_csi_driver
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "image_registry" {
-  name                = local.identity_names.image_registry
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "cloud_network_config" {
-  name                = local.identity_names.cloud_network_config
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "kms" {
-  name                = local.identity_names.kms
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "dp_disk_csi_driver" {
-  name                = local.identity_names.dp_disk_csi_driver
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "dp_file_csi_driver" {
-  name                = local.identity_names.dp_file_csi_driver
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
-resource "azurerm_user_assigned_identity" "dp_image_registry" {
-  name                = local.identity_names.dp_image_registry
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  tags                = local.tags
-}
-
 locals {
+  tags = merge(var.tags, {
+    project = "aro-hcp-reference"
+  })
+
+  # Built-in role definition GUIDs (0.0.2 az aro hcp guide)
+  role_ids = {
+    service_managed_identity = "c0ff367d-66d8-445e-917c-583feb0ef0d4"
+    cluster_api_provider     = "88366f10-ed47-4cc0-9fab-c8a06148393e"
+    control_plane_operator   = "fc0c873f-45e9-4d0d-a7d1-585aab30c6ed"
+    cloud_controller_manager = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
+    ingress_operator         = "0336e1d3-7a87-462b-b6db-342b63f7802c"
+    file_storage_operator    = "0d7aedc0-15fd-4a67-a412-efad370c947e"
+    image_registry_operator  = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
+    network_operator         = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
+    key_vault_crypto_user    = "12338af0-0e69-4776-bea7-57ae8d297424"
+    reader                   = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
+    federated_credential     = "ef318e2a-8334-4a05-9e4a-295a196c6a6e"
+  }
+
+  identity_names = {
+    service                  = "${var.cluster_name}-service"
+    cluster_api_azure        = "${var.cluster_name}-cluster-api-azure"
+    control_plane            = "${var.cluster_name}-control-plane"
+    cloud_controller_manager = "${var.cluster_name}-cloud-controller-manager"
+    ingress                  = "${var.cluster_name}-ingress"
+    disk_csi_driver          = "${var.cluster_name}-disk-csi-driver"
+    file_csi_driver          = "${var.cluster_name}-file-csi-driver"
+    image_registry           = "${var.cluster_name}-image-registry"
+    cloud_network_config     = "${var.cluster_name}-cloud-network-config"
+    kms                      = "${var.cluster_name}-kms"
+    dp_disk_csi_driver       = "${var.cluster_name}-dp-disk-csi-driver"
+    dp_file_csi_driver       = "${var.cluster_name}-dp-file-csi-driver"
+    dp_image_registry        = "${var.cluster_name}-dp-image-registry"
+  }
+
   identities = {
     service                  = azurerm_user_assigned_identity.service
     cluster_api_azure        = azurerm_user_assigned_identity.cluster_api_azure
@@ -138,9 +82,9 @@ locals {
   ])
 
   scopes = {
-    vnet      = azurerm_virtual_network.this.id
-    nsg       = azurerm_network_security_group.this.id
-    subnet    = azurerm_subnet.worker.id
+    vnet      = var.vnet_id
+    nsg       = var.nsg_id
+    subnet    = var.subnet_id
     key_vault = azurerm_key_vault.this.id
   }
 
@@ -189,14 +133,4 @@ locals {
   assignment_specs_map = {
     for spec in local.assignment_specs : spec.key => spec
   }
-}
-
-resource "azurerm_role_assignment" "this" {
-  for_each = local.assignment_specs_map
-
-  scope                            = try(each.value.scope_identity, null) != null ? local.identities[each.value.scope_identity].id : local.scopes[each.value.scope]
-  role_definition_id               = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/${local.role_ids[each.value.role]}"
-  principal_id                     = local.identities[each.value.principal].principal_id
-  principal_type                   = "ServicePrincipal"
-  skip_service_principal_aad_check = true
 }

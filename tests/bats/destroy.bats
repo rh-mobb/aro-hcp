@@ -2,31 +2,28 @@
 
 setup() {
   export PATH="${BATS_TEST_DIRNAME}/bin:${PATH}"
-  export CONFIG_FILE="${BATS_TEST_DIRNAME}/tmp/cluster.env"
-  mkdir -p "${BATS_TEST_DIRNAME}/tmp"
-  cat >"${CONFIG_FILE}" <<'EOF'
-LOCATION=uksouth
-CLUSTER_NAME=test-cluster
-RESOURCE_GROUP=test-rg
-MANAGED_RESOURCE_GROUP=test-cluster-managed
-NODEPOOL_NAME=np-1
-NODEPOOL_REPLICAS=2
-CLUSTER_VERSION=4.20
-CLUSTER_CHANNEL=candidate
-NODEPOOL_VERSION=4.20.29
-NODEPOOL_CHANNEL=candidate
+  export CLUSTER="test-cluster"
+  export TFVARS="${BATS_TEST_DIRNAME}/tmp/clusters/test-cluster/terraform.tfvars"
+  mkdir -p "${BATS_TEST_DIRNAME}/tmp/clusters/test-cluster"
+  cat >"${TFVARS}" <<'EOF'
+location = "uksouth"
+cluster_name = "test-cluster"
+resource_group_name = "test-rg"
+managed_resource_group_name = "test-cluster-managed"
+node_pool_name = "np-1"
 EOF
 }
 
 @test "destroy removes node pool from state then full destroy" {
   run bash "${BATS_TEST_DIRNAME}/../../scripts/destroy.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"terraform state rm azapi_resource.node_pool"* ]]
+  [[ "$output" == *"terraform state rm module.cluster.azapi_resource.node_pool"* ]]
   [[ "$output" == *"terraform destroy -auto-approve"* ]]
+  [[ "$output" == *"-var-file="* ]]
   [[ "$output" != *"-target=azapi_resource.hcp_cluster"* ]]
 
   local rm_line destroy_line
-  rm_line="$(echo "$output" | grep -n "terraform state rm azapi_resource.node_pool" | head -1 | cut -d: -f1)"
+  rm_line="$(echo "$output" | grep -n "terraform state rm module.cluster.azapi_resource.node_pool" | head -1 | cut -d: -f1)"
   destroy_line="$(echo "$output" | grep -n "terraform destroy -auto-approve" | head -1 | cut -d: -f1)"
   [ "${rm_line}" -lt "${destroy_line}" ]
 }
@@ -35,25 +32,46 @@ EOF
   TF_STATE_HAS_NODE_POOL=0 run bash "${BATS_TEST_DIRNAME}/../../scripts/destroy.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"skipping state rm"* ]]
-  [[ "$output" != *"terraform state rm azapi_resource.node_pool"* ]]
+  [[ "$output" != *"terraform state rm module.cluster.azapi_resource.node_pool"* ]]
 }
 
 @test "vnet integration subnet depends on other vnet writers" {
-  local net="${BATS_TEST_DIRNAME}/../../terraform/network.tf"
+  local net="${BATS_TEST_DIRNAME}/../../modules/network/main.tf"
   run grep -A30 'resource "azapi_resource" "vnet_integration_subnet"' "${net}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"azurerm_subnet.worker"* ]]
   [[ "$output" == *"azurerm_subnet_network_security_group_association.worker"* ]]
 }
 
-@test "make test unsets TF_VAR exports so CI without cluster.env uses terraform defaults" {
+@test "make test unsets TF_VAR exports so CI without cluster tfvars uses terraform defaults" {
   local mk="${BATS_TEST_DIRNAME}/../../Makefile"
-  run grep -A5 '^TF_VARS_TO_UNSET' "${mk}"
+  run grep -A8 '^TF_VARS_TO_UNSET' "${mk}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"TF_VAR_node_pool_replicas"* ]]
   [[ "$output" == *"TF_VAR_vnet_name"* ]]
-  run grep -A4 '^test:' "${mk}"
+  run grep -A6 '^test:' "${mk}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"unset"* ]]
   [[ "$output" == *"TF_VARS_TO_UNSET"* ]]
+}
+
+@test "make cluster pattern delegates to Makefile.cluster" {
+  local mk="${BATS_TEST_DIRNAME}/../../Makefile"
+  run grep 'Makefile.cluster' "${mk}"
+  [ "$status" -eq 0 ]
+}
+
+@test "Makefile.cluster plan passes cluster tfvars" {
+  local mk="${BATS_TEST_DIRNAME}/../../Makefile.cluster"
+  run grep -E '^plan:' -A8 "${mk}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'-var-file="$(TFVARS)"'* ]]
+}
+
+@test "Makefile.cluster uses CLUSTER_PROFILE and unexports CLUSTER_NAME" {
+  local mk="${BATS_TEST_DIRNAME}/../../Makefile.cluster"
+  run grep 'CLUSTER_PROFILE' "${mk}"
+  [ "$status" -eq 0 ]
+  run grep 'unexport CLUSTER_NAME' "${mk}"
+  [ "$status" -eq 0 ]
 }

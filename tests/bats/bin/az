@@ -28,7 +28,9 @@ case "${cmd}" in
               fi
               echo '{"name":"test-cluster","properties":{"provisioningState":"Succeeded"}}'
               ;;
-            create) echo "created" ;;
+            create)
+              echo "created $*"
+              ;;
             delete) echo "deleted" ;;
             list) echo "[]" ;;
             request-credential) echo "merged" ;;

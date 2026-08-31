@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Mock sshuttle for bats tests.
+set -euo pipefail
+
+if [[ "${*}" == *"--daemon"* ]]; then
+  pidfile=""
+  local_next=0
+  for arg in "$@"; do
+    if [[ "${local_next}" == "1" ]]; then
+      pidfile="${arg}"
+      local_next=0
+      continue
+    fi
+    if [[ "${arg}" == "--pidfile" ]]; then
+      local_next=1
+    fi
+  done
+  : "${pidfile:?--pidfile required for mock daemon mode}"
+  echo $$ >"${pidfile}"
+  exit 0
+fi
+
+echo "mock sshuttle $*" >&2
+exit 0

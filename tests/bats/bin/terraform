@@ -16,35 +16,68 @@ case "${sub}" in
     flag="${1:-}"
     name="${2:-}"
     if [[ "${flag}" == "-json" ]]; then
-      cat <<'JSON'
+      case "${name}" in
+        identity_ids)
+          cat <<'JSON'
 {
-  "identity_ids": {
-    "value": {
-      "service": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/svc",
-      "cluster_api_azure": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/capi",
-      "control_plane": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cp",
-      "cloud_controller_manager": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ccm",
-      "ingress": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ingress",
-      "disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/disk",
-      "file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/file",
-      "image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/image",
-      "cloud_network_config": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cloudnet",
-      "kms": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kms",
-      "dp_disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpdisk",
-      "dp_file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpfile",
-      "dp_image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpimage"
-    }
-  }
+  "service": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/svc",
+  "cluster_api_azure": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/capi",
+  "control_plane": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cp",
+  "cloud_controller_manager": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ccm",
+  "ingress": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/ingress",
+  "disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/disk",
+  "file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/file",
+  "image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/image",
+  "cloud_network_config": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/cloudnet",
+  "kms": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/kms",
+  "dp_disk_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpdisk",
+  "dp_file_csi_driver": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpfile",
+  "dp_image_registry": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dpimage"
 }
 JSON
+          ;;
+      esac
     elif [[ "${flag}" == "-raw" ]]; then
       case "${name}" in
+        cluster_name) echo "test-cluster" ;;
+        resource_group_name) echo "test-rg" ;;
+        location) echo "uksouth" ;;
+        managed_resource_group_name) echo "test-cluster-managed" ;;
+        cluster_version) echo "4.20" ;;
+        cluster_channel) echo "candidate" ;;
+        node_pool_name) echo "np-1" ;;
+        node_pool_replicas) echo "2" ;;
+        node_pool_vm_size) echo "Standard_D4s_v6" ;;
+        node_pool_version) echo "4.20.29" ;;
+        node_pool_channel) echo "candidate" ;;
+        api_visibility) echo "Public" ;;
+        ingress_visibility) echo "Public" ;;
         subnet_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/worker" ;;
         vnet_integration_subnet_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/integration" ;;
         nsg_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg" ;;
         key_vault_name) echo "cust-kv-test" ;;
         etcd_key_version) echo "abc123" ;;
-        *) echo "mock" ;;
+        jump_public_ip)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo "203.0.113.10"
+          else
+            echo ""
+          fi
+          ;;
+        jump_ssh_user)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo "fedora"
+          else
+            echo ""
+          fi
+          ;;
+        jump_sshuttle_command)
+          if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then
+            echo 'sshuttle -r fedora@203.0.113.10 --dns -e "ssh -i jump" 10.0.0.0/16'
+          else
+            echo ""
+          fi
+          ;;
       esac
     fi
     ;;
@@ -54,10 +87,10 @@ JSON
       case "${action}" in
         list)
           if [[ "${TF_STATE_HAS_CLUSTER:-1}" == "1" ]]; then
-            echo "azapi_resource.hcp_cluster"
+            echo "module.cluster.azapi_resource.hcp_cluster"
           fi
           if [[ "${TF_STATE_HAS_NODE_POOL:-1}" == "1" ]]; then
-            echo "azapi_resource.node_pool"
+            echo "module.cluster.azapi_resource.node_pool"
           fi
           ;;
         rm)

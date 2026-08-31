@@ -8,13 +8,15 @@ mock_provider "azurerm" {
     }
   }
 }
-mock_provider "azapi" {}
 mock_provider "random" {}
 
 variables {
   cluster_name        = "test-cluster"
   resource_group_name = "test-rg"
   location            = "uksouth"
+  vnet_id             = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet"
+  nsg_id              = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg"
+  subnet_id           = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/worker"
 }
 
 run "identity_count" {
