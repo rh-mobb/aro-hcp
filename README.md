@@ -18,7 +18,7 @@ make cluster.public.apply
 
 | Layer | Tool | Resources |
 |-------|------|-----------|
-| Prerequisites + cluster | Terraform (azurerm + azapi) | RG, NSG, VNet, subnets, Key Vault, etcd KMS key, 13 MIs, RBAC, `hcpOpenShiftClusters`, default `nodePools` |
+| Prerequisites + cluster | Terraform (azurerm + azapi) | RG, NSG, VNet, subnets, Key Vault, etcd KMS key, optional `redhat-pull-secret`, 13 HCP MIs + ESO identity, RBAC, `hcpOpenShiftClusters`, default `nodePools` |
 | Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, external-auth |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
@@ -89,6 +89,7 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.sshuttle.connect` | Start sshuttle in the background (`clusters/<name>/sshuttle.pid`) |
 | `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
 | `make cluster.<name>.external-auth` | Entra app + external-auth + console |
+| `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional) |
 | `make cluster.<name>.external-auth-delete` | Remove external-auth |
 
 ## Configuration
@@ -103,6 +104,7 @@ Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfv
 | `ingress_visibility` | `Public` | Create-time only: `Public`, `Private`, or `Disabled`. Console / `*.apps`. |
 | `enable_jumpbox` | `false` | When `true`, Terraform creates the Fedora jump VM. |
 | `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
+| `pull_secret_path` | (empty) | Optional. Path to a Red Hat dockerconfigjson. When set, Terraform writes Key Vault `redhat-pull-secret`. Prefer `PULL_SECRET_PATH=... make cluster.<name>.apply` (Make exports `TF_VAR_pull_secret_path`). Never commit the file. |
 
 The jump public key is `clusters/<name>/jump.pub` (create with `make cluster.<name>.jump-key`); Make exports it as `TF_VAR_jump_ssh_public_key` when the file exists. It is not stored in `terraform.tfvars`.
 
@@ -135,6 +137,7 @@ make fmt lint test       # before every commit
 | Credentials | `make cluster.<name>.kubeconfig` |
 | get-versions | `make cluster.<name>.versions` |
 | External auth | `make cluster.<name>.external-auth` |
+| GitOps operators | `make cluster.<name>.bootstrap` |
 
 ## RBAC note
 
@@ -154,6 +157,9 @@ Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet sco
 | `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [Entra permissions](docs/guides/external-auth-entra-id.md#directory-roles-least-privilege) |
 | AADSTS65001 consent error | User consent disabled | Admin consent for Azure CLI Graph scopes and/or the OIDC app |
 | Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make cluster.<name>.external-auth` |
+| GitOps CSV never Succeeded | Channel not in catalog for this OCP version | Bump `gitops/bootstrap/subscription.yaml` `channel` to the current `gitops-1.x` (see [GitOps guide](docs/guides/gitops.md)) |
+| GitOps bundle ImagePullBackOff `registry.redhat.io` | HCP pull secret is only the service ACR | `PULL_SECRET_PATH=<dockerconfigjson> make cluster.<name>.apply` stores it in Key Vault; `make cluster.<name>.bootstrap` creates `kube-system/additional-pull-secret` |
+| Duplicate GitOps / Web Terminal operators | Installed from Software Catalog as well as GitOps | Delete the extra Subscription; keep the GitOps-managed one |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
 | `oc` cannot reach API hostname | `api_visibility = "Private"` without VNet path or API DNS | `make cluster.<name>.sshuttle.connect`; `make cluster.<name>.private-dns`; merge `clusters/<name>/operator-hosts.snippet` into `/etc/hosts` if needed |

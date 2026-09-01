@@ -7,7 +7,7 @@ Layer **1** — one platform team runs the complete lifecycle from this reposito
 | Component | Module |
 |-----------|--------|
 | Resource group, VNet, NSG, worker + integration subnets | [`modules/network/`](../../modules/network/) |
-| Key Vault, etcd KMS key, 13 user-assigned identities, 28 RBAC assignments | [`modules/identities/`](../../modules/identities/) |
+| Key Vault, etcd KMS key, optional pull-secret KV secret, 13 HCP identities + ESO identity, 28 operator RBAC assignments + ESO Key Vault Secrets User | [`modules/identities/`](../../modules/identities/) |
 | HCP cluster + default node pool (AzAPI) | [`modules/cluster/`](../../modules/cluster/) |
 | Optional Fedora jump VM | [`modules/jumpbox/`](../../modules/jumpbox/) |
 
@@ -45,6 +45,7 @@ make cluster.<name>.plan               # validates OpenShift versions for locati
 make cluster.<name>.apply              # ~30–60 min
 make cluster.<name>.kubeconfig         # 24h admin creds → .kube/config
 make cluster.<name>.external-auth      # Entra + console — required for usable console
+make cluster.<name>.bootstrap   # optional: GitOps + Web Terminal + Compliance + ESO
 ```
 
 Private API or ingress:
@@ -86,6 +87,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | Stop sshuttle | `cluster.<name>.sshuttle.disconnect` | None | None | None |
 | Customer Private DNS (private API) | `cluster.<name>.private-dns` | **Contributor** on customer RG (Private DNS zone + VNet link + A records); **Reader** on managed RG (`hypershift.local` A record) | None | None |
 | Retry console OAuth secret | `cluster.<name>.console-secret` | None | App credential reset if re-running | **cluster-admin** kubeconfig + sshuttle for private API |
+| GitOps + operator baseline | `cluster.<name>.bootstrap` | **Key Vault Secrets User** (or deployer Key Vault Administrator) to `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set | None | **cluster-admin** kubeconfig; sshuttle if API is private |
 | Destroy | `cluster.<name>.destroy` | Same as **apply** (delete cluster, network, identities); runs `private-dns-delete` when API is private | Same as **external-auth-delete** if cleaning Entra app manually first | Optional admin kubeconfig if deleting console secret |
 | Extra node pool | `scripts/nodepool.sh create` | **Contributor** on cluster (`nodePools` write) | None | None |
 
@@ -97,9 +99,10 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 |------|-----|
 | `Microsoft.Resources/subscriptions/resourceGroups/write` | Create customer RG |
 | `Microsoft.Network/*` on RG | VNet, subnets, NSG, associations |
-| `Microsoft.KeyVault/vaults/write`, `.../keys/write` | Etcd KMS Key Vault and key |
-| `Microsoft.ManagedIdentity/userAssignedIdentities/write` | 13 cluster identities |
-| `Microsoft.Authorization/roleAssignments/write` | 28 assignments to identities + Key Vault Administrator for deployer (**requires UAA or Owner**) |
+| `Microsoft.KeyVault/vaults/write`, `.../keys/write`, `.../secrets/write` | Etcd KMS Key Vault and key; optional `redhat-pull-secret` when `pull_secret_path` is set |
+| `Microsoft.ManagedIdentity/userAssignedIdentities/write` | 13 HCP identities + ESO workload identity |
+| `Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials/write` | ESO federated credential (cluster OIDC issuer → named ServiceAccount) |
+| `Microsoft.Authorization/roleAssignments/write` | 28 operator assignments + ESO Key Vault Secrets User + Key Vault Administrator for deployer (**requires UAA or Owner**) |
 | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/write` | Cluster ARM resource |
 | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools/write` | Default node pool |
 | `Microsoft.Compute/*` (when jump enabled) | Jump VM, NIC, public IP |
@@ -135,6 +138,16 @@ Calls `az aro hcp cluster request-credential` / `revoke-credential`. Requires **
 
 Console is not usable until this step completes (ClusterOperator `console` stays degraded without the OAuth secret).
 
+#### `make cluster.<name>.bootstrap`
+
+| Plane | Minimum |
+|-------|---------|
+| Azure | **Key Vault Secrets User** (or Key Vault Administrator) on the customer vault — `get` `redhat-pull-secret`. Skip if `kube-system/additional-pull-secret` already exists or `PULL_SECRET_PATH` is set. |
+| Entra | None |
+| OpenShift | Valid admin **kubeconfig**; **sshuttle** if `api_visibility = Private` |
+
+Installs OpenShift GitOps, publishes `aro-platform-metadata`, and syncs [`gitops/`](../../gitops/) (Web Terminal, Compliance, External Secrets Operator). Store the Red Hat dockerconfigjson with `PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply` (Key Vault) then bootstrap. See [GitOps bootstrap](../guides/gitops.md).
+
 #### `make cluster.<name>.destroy`
 
 Same Azure permissions as **apply** (delete resources). Run **external-auth-delete** first if you need to remove the Entra app registration; destroy does not call Entra automatically.
@@ -143,9 +156,11 @@ Same Azure permissions as **apply** (delete resources). Run **external-auth-dele
 
 Built-in **Contributor + UAA** is the supported operator path. For stricter policy, a **custom role** at customer RG scope can combine:
 
-- Resource write actions listed above for network, Key Vault, identities, compute (jump), and Red Hat OpenShift cluster/node pool resources
+- Resource write actions listed above for network, Key Vault (including `vaults/secrets/write` when uploading `redhat-pull-secret`), identities, compute (jump), and Red Hat OpenShift cluster/node pool resources
 - `Microsoft.Authorization/roleAssignments/write` (UAA equivalent)
 - Exclude subscription-wide actions you do not need
+
+GitOps bootstrap, if not run by the deployer, also needs **Key Vault Secrets User** (`vaults/secrets/get`) on the customer vault.
 
 Maintaining parity with [`modules/identities/`](../../modules/identities/) role assignment set is the operator’s responsibility if you deviate from UAA.
 

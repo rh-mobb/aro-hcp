@@ -153,3 +153,14 @@ external_auth_exists() {
 ensure_kubeconfig_dir() {
   mkdir -p "$(dirname "${KUBECONFIG_PATH}")"
 }
+
+# Expand ~ and export TF_VAR_pull_secret_path as an absolute file path.
+# No-op when PULL_SECRET_PATH is unset. Dies if the file is missing.
+export_tf_var_pull_secret_path() {
+  local p="${PULL_SECRET_PATH:-}"
+  [[ -n "${p}" ]] || return 0
+  p="${p/#\~/${HOME}}"
+  [[ -f "${p}" ]] || die "Missing pull secret file ${p} (PULL_SECRET_PATH)"
+  TF_VAR_pull_secret_path="$(cd "$(dirname "${p}")" && pwd)/$(basename "${p}")"
+  export TF_VAR_pull_secret_path
+}

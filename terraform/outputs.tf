@@ -38,8 +38,36 @@ output "key_vault_id" {
   value = module.identities.key_vault_id
 }
 
+output "key_vault_uri" {
+  value = module.identities.key_vault_uri
+}
+
+output "tenant_id" {
+  value = module.identities.tenant_id
+}
+
+output "eso_identity_id" {
+  description = "Resource ID of the ESO workload identity (not an HCP cluster identity)."
+  value       = module.identities.eso_identity_id
+}
+
+output "eso_client_id" {
+  description = "Client ID published to openshift-gitops/aro-platform-metadata for the GitOps annotation Job."
+  value       = module.identities.eso_client_id
+}
+
+output "oidc_issuer_url" {
+  description = "Cluster OIDC issuer used by the ESO federated identity credential."
+  value       = module.cluster.oidc_issuer_url
+}
+
 output "etcd_key_version" {
   value = module.identities.etcd_key_version
+}
+
+output "pull_secret_key_vault_secret_name" {
+  description = "Key Vault secret name for the Red Hat pull secret. Bootstrap reads this secret; the value is never exported."
+  value       = module.identities.pull_secret_key_vault_secret_name
 }
 
 output "identity_ids" {

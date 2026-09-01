@@ -60,3 +60,6 @@ tests/bats/tmp/
 # MkDocs
 .venv-docs/
 site/
+
+# Red Hat pull secrets (never commit)
+pull-secret.txt

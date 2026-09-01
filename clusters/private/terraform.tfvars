@@ -18,3 +18,7 @@ ingress_visibility = "Private"
 enable_jumpbox = true
 # Required when enable_jumpbox is true. SSH 22 from this CIDR only (use your /32).
 # jump_ssh_source_prefix = "1.2.3.4/32"
+
+# Optional Red Hat pull secret for OperatorHub (GitOps bootstrap). Prefer
+# PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply  (never commit the file).
+# pull_secret_path = "/absolute/path/to/pull-secret.txt"

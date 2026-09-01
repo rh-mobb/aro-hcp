@@ -17,13 +17,15 @@ module "network" {
 module "identities" {
   source = "../modules/identities"
 
-  cluster_name        = var.cluster_name
-  resource_group_name = module.network.resource_group_name
-  location            = module.network.location
-  vnet_id             = module.network.vnet_id
-  nsg_id              = module.network.nsg_id
-  subnet_id           = module.network.worker_subnet_id
-  tags                = var.tags
+  cluster_name                      = var.cluster_name
+  resource_group_name               = module.network.resource_group_name
+  location                          = module.network.location
+  vnet_id                           = module.network.vnet_id
+  nsg_id                            = module.network.nsg_id
+  subnet_id                         = module.network.worker_subnet_id
+  tags                              = var.tags
+  pull_secret_content               = length(trimspace(var.pull_secret_path)) > 0 ? file(var.pull_secret_path) : ""
+  pull_secret_key_vault_secret_name = var.pull_secret_key_vault_secret_name
 }
 
 module "cluster" {

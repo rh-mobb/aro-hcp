@@ -1,5 +1,6 @@
 locals {
   etcd_encryption_key_name = "etcd-data-kms-encryption-key"
+  have_pull_secret         = length(trimspace(var.pull_secret_content)) > 0
 }
 
 resource "random_string" "key_vault_suffix" {
@@ -48,4 +49,15 @@ resource "azurerm_key_vault_key" "etcd_encryption" {
     "verify",
     "wrapKey",
   ]
+}
+
+resource "azurerm_key_vault_secret" "pull_secret" {
+  count = local.have_pull_secret ? 1 : 0
+
+  name         = var.pull_secret_key_vault_secret_name
+  value        = var.pull_secret_content
+  key_vault_id = azurerm_key_vault.this.id
+  content_type = "application/json"
+
+  depends_on = [azurerm_role_assignment.deployer_key_vault_admin]
 }

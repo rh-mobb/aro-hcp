@@ -65,6 +65,18 @@ case "${cmd}" in
   version)
     echo '{"azure-cli":"2.67.0"}'
     ;;
+  keyvault)
+    if [[ "${1:-}" == "secret" && "${2:-}" == "show" ]]; then
+      if [[ "${AZ_KV_PULL_SECRET:-1}" == "0" ]]; then
+        echo "SecretNotFound" >&2
+        exit 1
+      fi
+      echo '{"auths":{"registry.redhat.io":{"auth":"dGVzdA=="}}}'
+      exit 0
+    fi
+    echo "mock az: unsupported keyvault $*" >&2
+    exit 1
+    ;;
   *)
     echo "mock az: unsupported ${cmd} $*" >&2
     exit 1

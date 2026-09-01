@@ -62,6 +62,7 @@ run_terraform_destroy() {
       export TF_VAR_jump_ssh_public_key
       export TF_VAR_jump_ssh_private_key_path="${ROOT_DIR}/clusters/${CLUSTER}/jump"
     fi
+    export_tf_var_pull_secret_path
     destroy_args+=(-var-file="${TFVARS}")
   fi
   terraform -chdir="${TF_DIR}" destroy "${destroy_args[@]}"

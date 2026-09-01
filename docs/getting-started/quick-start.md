@@ -51,6 +51,9 @@ make cluster.my-cluster.versions
 ```bash
 make cluster.my-cluster.kubeconfig       # admin creds, 24h TTL → .kube/config
 make cluster.my-cluster.external-auth    # Entra app + console OAuth secret
+# optional GitOps: store pull secret on apply first, then bootstrap
+# PULL_SECRET_PATH=~/pull-secret.txt make cluster.my-cluster.apply
+make cluster.my-cluster.bootstrap        # OpenShift GitOps + Web Terminal + Compliance + ESO
 ```
 
 External-auth requires Entra rights separate from Azure Owner — see [External auth with Entra ID](../guides/external-auth-entra-id.md).
@@ -70,6 +73,8 @@ oc get clusterversion
 ```
 
 Console URL (from cluster show) should return HTTP 200 after external-auth.
+
+Optional GitOps (after kubeconfig; sshuttle first if the API is private): [GitOps bootstrap](../guides/gitops.md).
 
 ## Private cluster profile
 

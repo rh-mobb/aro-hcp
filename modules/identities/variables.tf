@@ -26,3 +26,32 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "pull_secret_content" {
+  description = "Red Hat dockerconfigjson. When non-empty, Terraform stores it in Key Vault. Leave empty to skip managing the secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition = (
+      length(trimspace(var.pull_secret_content)) == 0 ||
+      (
+        can(jsondecode(var.pull_secret_content)) &&
+        contains(keys(jsondecode(var.pull_secret_content)), "auths")
+      )
+    )
+    error_message = "pull_secret_content must be empty or a dockerconfigjson object with an auths key."
+  }
+}
+
+variable "pull_secret_key_vault_secret_name" {
+  description = "Key Vault secret name for the Red Hat pull secret."
+  type        = string
+  default     = "redhat-pull-secret"
+
+  validation {
+    condition     = can(regex("^[0-9a-zA-Z-]{1,127}$", var.pull_secret_key_vault_secret_name))
+    error_message = "pull_secret_key_vault_secret_name must be 1-127 alphanumeric characters or hyphens."
+  }
+}

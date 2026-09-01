@@ -14,9 +14,14 @@ locals {
     image_registry_operator  = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
     network_operator         = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
     key_vault_crypto_user    = "12338af0-0e69-4776-bea7-57ae8d297424"
+    key_vault_secrets_user   = "4633458b-17de-408a-b874-0445c86b69e6"
     reader                   = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
     federated_credential     = "ef318e2a-8334-4a05-9e4a-295a196c6a6e"
   }
+
+  eso_namespace         = "external-secrets-operator"
+  eso_service_account   = "external-secrets-sa"
+  eso_federated_subject = "system:serviceaccount:${local.eso_namespace}:${local.eso_service_account}"
 
   identity_names = {
     service                  = "${var.cluster_name}-service"
