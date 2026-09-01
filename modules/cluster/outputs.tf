@@ -21,3 +21,8 @@ output "console_url" {
   description = "OpenShift console URL when reported by the HCP API."
   value       = try(azapi_resource.hcp_cluster.output.properties.console.url, null)
 }
+
+output "oidc_issuer_url" {
+  description = "Cluster OIDC issuer used for workload-identity federated credentials."
+  value       = try(azapi_resource.hcp_cluster.output.properties.platform.issuerUrl, null)
+}

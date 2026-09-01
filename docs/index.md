@@ -12,6 +12,7 @@ This repository uses reusable Terraform modules and a **directory-per-cluster** 
 | Verify subscription, RBAC, and quota | [Account Prerequisites](prerequisites/account.md) |
 | See least-privilege permissions per `make` target | [Full-Stack Deployment — permissions by step](prerequisites/full-stack.md#permissions-by-deployment-step) |
 | Configure Entra console OIDC | [External Auth with Entra ID](guides/external-auth-entra-id.md) |
+| Bootstrap GitOps and day-2 operators | [GitOps bootstrap](guides/gitops.md) |
 | Inspect Azure resources, RBAC scopes, and diagrams | [Architecture](architecture.md) |
 | Choose cluster profiles (public vs private) | [Cluster configurations](../clusters/README.md) |
 

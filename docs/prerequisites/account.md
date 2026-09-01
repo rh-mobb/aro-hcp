@@ -32,7 +32,7 @@ Request increases in the Azure portal (**Subscriptions → Usage + quotas**) if 
 
 ## RBAC scope and least privilege
 
-Terraform creates **everything in one customer resource group** (VNet, Key Vault, 13 user-assigned identities, 28 role assignments to those identities, HCP cluster ARM resource). Grant the deployer one of:
+Terraform creates **everything in one customer resource group** (VNet, Key Vault, 13 HCP identities plus an ESO workload identity, 28 operator role assignments plus ESO Key Vault Secrets User, HCP cluster ARM resource). Grant the deployer one of:
 
 | Role combination | Scope | Least privilege? | When to use |
 |------------------|-------|------------------|-------------|
@@ -41,7 +41,7 @@ Terraform creates **everything in one customer resource group** (VNet, Key Vault
 | **Contributor** only | Any | **Insufficient** | Fails on `Microsoft.Authorization/roleAssignments/write` |
 | **User Access Administrator** only | Any | **Insufficient** | Cannot create network, Key Vault, cluster |
 
-**Why User Access Administrator:** [`modules/identities/`](../../modules/identities/) assigns 28 platform roles to service identities and **Key Vault Administrator** to the deployer. Contributor cannot write role assignments.
+**Why User Access Administrator:** [`modules/identities/`](../../modules/identities/) assigns 28 platform roles plus ESO Key Vault Secrets User to identities and **Key Vault Administrator** to the deployer. Contributor cannot write role assignments.
 
 RG-scoped **Contributor + UAA** is enough for this repo’s default layout. A pre-existing VNet or Key Vault in **another** resource group also requires **Contributor + UAA** (or Owner) on that scope.
 
@@ -62,10 +62,11 @@ An operator with **RG-only** Contributor + UAA cannot register providers if they
 
 | Person | Azure RBAC | Runs |
 |--------|------------|------|
-| Platform engineer | Contributor + UAA on customer RG | `init`, `plan`, `apply`, `destroy` |
+| Platform engineer | Contributor + UAA on customer RG | `init`, `plan`, `apply`, `destroy` (includes Key Vault Administrator on the customer vault for etcd key + optional `redhat-pull-secret`) |
 | Cluster operator | Contributor on `hcpOpenShiftClusters` resource | `kubeconfig`, `revoke-credentials`, `external-auth` |
+| Cluster operator (GitOps) | **Key Vault Secrets User** on the customer vault (or reuse deployer Key Vault Administrator) | `bootstrap` — `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set or `additional-pull-secret` already exists |
 | Identity admin | Entra **Application Developer** (or app owner) | `external-auth` Entra steps only, if split |
-| Break-glass | OpenShift `cluster-admin` via 24h kubeconfig | Console secret, `rbac-user` / `rbac-group` |
+| Break-glass | OpenShift `cluster-admin` via 24h kubeconfig | Console secret, `rbac-user` / `rbac-group`, GitOps `oc apply` |
 
 See [Full-stack deployment — permissions by step](full-stack.md#permissions-by-deployment-step) for every `make` target.
 
@@ -77,7 +78,7 @@ See [Full-stack deployment — permissions by step](full-stack.md#permissions-by
 | `az aro hcp` extension | via `make setup` | Credentials, external-auth, extra node pools |
 | Terraform | >= 1.9 | Infrastructure |
 | `jq` | any recent | Scripts, credential parsing |
-| `oc` | >= 4.20 | External-auth console secret, optional RBAC |
+| `oc` | >= 4.20 | External-auth console secret, GitOps bootstrap, optional RBAC |
 | `sshuttle` | optional | Private API / private ingress via jump box |
 | `shellcheck`, `shfmt`, `tflint`, `bats`, `pre-commit` | optional | `make lint` / `make test` |
 

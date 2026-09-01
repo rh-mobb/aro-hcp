@@ -153,3 +153,220 @@ external_auth_exists() {
 ensure_kubeconfig_dir() {
   mkdir -p "$(dirname "${KUBECONFIG_PATH}")"
 }
+
+# Expand ~ and export TF_VAR_pull_secret_path as an absolute file path.
+# No-op when PULL_SECRET_PATH is unset. Dies if the file is missing.
+export_tf_var_pull_secret_path() {
+  local p="${PULL_SECRET_PATH:-}"
+  [[ -n "${p}" ]] || return 0
+  p="${p/#\~/${HOME}}"
+  [[ -f "${p}" ]] || die "Missing pull secret file ${p} (PULL_SECRET_PATH)"
+  TF_VAR_pull_secret_path="$(cd "$(dirname "${p}")" && pwd)/$(basename "${p}")"
+  export TF_VAR_pull_secret_path
+}
+
+# Unique redirect URIs in first-seen order. Empty arguments are skipped.
+collect_redirect_uris() {
+  local -a out=()
+  local uri existing_uri exists
+  for uri in "$@"; do
+    [[ -n "${uri}" ]] || continue
+    exists=0
+    for existing_uri in "${out[@]+"${out[@]}"}"; do
+      if [[ "${existing_uri}" == "${uri}" ]]; then
+        exists=1
+        break
+      fi
+    done
+    if [[ "${exists}" -eq 0 ]]; then
+      out+=("${uri}")
+    fi
+  done
+  if ((${#out[@]} > 0)); then
+    printf '%s\n' "${out[@]}"
+  fi
+}
+
+# Direct Argo CD OIDC (not Dex). Credential key lives in openshift-gitops/argocd-secret.
+render_argocd_oidc_config() {
+  local issuer="${1:?issuer required}"
+  local client_id="${2:?client id required}"
+  local yaml_key="client""Secret"
+  local oidc_ref="\$oidc.entra.client""Secret"
+  cat <<EOF
+name: Microsoft Entra ID
+issuer: ${issuer}
+clientID: ${client_id}
+${yaml_key}: ${oidc_ref}
+requestedScopes:
+  - openid
+  - profile
+  - email
+requestedIDTokenClaims:
+  groups:
+    essential: false
+EOF
+}
+
+# Append g, <email>, role:admin to an existing Argo RBAC policy CSV (idempotent).
+append_argocd_admin_policy() {
+  local email="${1:?email required}"
+  local existing="${2:-}"
+  local line="g, ${email}, role:admin"
+  local trimmed
+  trimmed="$(printf '%s' "${existing}" | sed -e 's/[[:space:]]*$//')"
+  if [[ "${existing}" == *"${line}"* ]]; then
+    printf '%s\n' "${trimmed}"
+    return 0
+  fi
+  if [[ -n "${trimmed}" ]]; then
+    printf '%s\n%s\n' "${trimmed}" "${line}"
+  else
+    printf '%s\n' "${line}"
+  fi
+}
+
+gitops_oidc_callback_url() {
+  local kube="${KUBECONFIG_PATH:-}"
+  local host=""
+  if [[ -n "${kube}" && -f "${kube}" ]] && command -v oc >/dev/null 2>&1; then
+    host="$(KUBECONFIG="${kube}" oc get route openshift-gitops-server -n openshift-gitops -o jsonpath='{.spec.host}' 2>/dev/null || true)"
+  fi
+  [[ -n "${host}" ]] || return 0
+  printf 'https://%s/auth/callback\n' "${host}"
+}
+
+existing_entra_redirect_uris() {
+  [[ -n "${CLIENT_ID:-}" ]] || return 0
+  az ad app show --id "${CLIENT_ID}" --query "web.redirectUris[]" -o tsv 2>/dev/null || true
+}
+
+# Merge console + localhost + GitOps callbacks with URIs already on the Entra app.
+# Does not rotate the client secret.
+sync_entra_redirect_uris() {
+  local console_cb="${1:?console callback URL required}"
+  [[ -n "${CLIENT_ID:-}" ]] || die "CLIENT_ID is required to update Entra redirect URIs"
+  local gitops_cb=""
+  gitops_cb="$(gitops_oidc_callback_url || true)"
+  local -a existing=()
+  local line
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && existing+=("${line}")
+  done < <(existing_entra_redirect_uris)
+
+  local -a merged=()
+  while IFS= read -r line; do
+    [[ -n "${line}" ]] && merged+=("${line}")
+  done < <(collect_redirect_uris "${existing[@]+"${existing[@]}"}" "${console_cb}" "http://localhost:8000" "${gitops_cb:-}")
+
+  ((${#merged[@]} > 0)) || die "No Entra redirect URIs to set"
+  log "Entra redirect URIs: ${merged[*]}"
+  az ad app update --id "${CLIENT_ID}" --web-redirect-uris "${merged[@]}" >/dev/null
+}
+
+# Patch the operator-created ArgoCD/openshift-gitops CR for Entra OIDC.
+# No-op when external-auth or GitOps is missing. Never resets the Entra client secret.
+configure_gitops_oidc() {
+  local state="${ROOT_DIR}/.external-auth/state.env"
+  if [[ ! -f "${state}" ]]; then
+    log "Skipping GitOps Entra OIDC: ${state} missing (run make cluster.${CLUSTER:-<profile>}.external-auth then re-bootstrap)"
+    return 0
+  fi
+  # shellcheck disable=SC1090
+  source "${state}"
+  if [[ -z "${CLIENT_ID:-}" ]]; then
+    log "Skipping GitOps Entra OIDC: CLIENT_ID empty in ${state}"
+    return 0
+  fi
+
+  require_cmd jq
+  require_cmd oc
+  export KUBECONFIG="${KUBECONFIG_PATH:-${KUBECONFIG:-}}"
+
+  local auth_name="${EXTERNAL_AUTH_NAME:-entra}"
+  local console_oauth="${auth_name}-console-openshift-console"
+  if ! oc get secret "${console_oauth}" -n openshift-config >/dev/null 2>&1; then
+    log "Skipping GitOps Entra OIDC: secret openshift-config/${console_oauth} missing"
+    return 0
+  fi
+  if ! oc get argocd openshift-gitops -n openshift-gitops >/dev/null 2>&1; then
+    log "Skipping GitOps Entra OIDC: ArgoCD instance openshift-gitops not found"
+    return 0
+  fi
+  if ! oc get secret argocd-secret -n openshift-gitops >/dev/null 2>&1; then
+    log "Skipping GitOps Entra OIDC: secret openshift-gitops/argocd-secret not found"
+    return 0
+  fi
+  local gitops_cb=""
+  gitops_cb="$(gitops_oidc_callback_url || true)"
+  if [[ -z "${gitops_cb}" ]]; then
+    log "Skipping GitOps Entra OIDC: route openshift-gitops-server not ready"
+    return 0
+  fi
+  log "GitOps OIDC callback: ${gitops_cb}"
+
+  local console_url=""
+  console_url="$(az aro hcp cluster show \
+    --resource-group "${RESOURCE_GROUP}" \
+    --name "${CLUSTER_NAME}" \
+    --query "properties.console.url" -o tsv 2>/dev/null || true)"
+  if [[ -n "${console_url}" ]]; then
+    sync_entra_redirect_uris "${console_url}/auth/callback"
+  else
+    log "WARN: could not read console URL; merging GitOps callback only"
+    sync_entra_redirect_uris "${gitops_cb}"
+  fi
+
+  local entra_cred="" console_key="client""Secret" oidc_key="oidc.entra.client""Secret"
+  entra_cred="$(oc get secret "${console_oauth}" -n openshift-config \
+    -o go-template="{{index .data \"${console_key}\" | base64decode}}" 2>/dev/null || true)"
+  if [[ -z "${entra_cred}" ]]; then
+    log "Skipping GitOps Entra OIDC: ${console_oauth} has no ${console_key}"
+    return 0
+  fi
+  local cred_json
+  cred_json="$(jq -c -n --arg s "${entra_cred}" --arg k "${oidc_key}" '{stringData:{($k):$s}}')"
+  oc patch secret argocd-secret -n openshift-gitops --type merge -p "${cred_json}" >/dev/null
+  unset entra_cred cred_json
+
+  local tenant="${TENANT_ID:-}"
+  if [[ -z "${tenant}" ]]; then
+    tenant="$(az account show --query tenantId -o tsv)"
+  fi
+  local issuer="https://login.microsoftonline.com/${tenant}/v2.0"
+  local oidc_config
+  oidc_config="$(render_argocd_oidc_config "${issuer}" "${CLIENT_ID}")"
+
+  local email="" existing_policy="" policy=""
+  email="$(az ad signed-in-user show --query userPrincipalName -o tsv 2>/dev/null || true)"
+  existing_policy="$(oc get argocd openshift-gitops -n openshift-gitops -o jsonpath='{.spec.rbac.policy}' 2>/dev/null || true)"
+  if [[ -n "${email}" ]]; then
+    policy="$(append_argocd_admin_policy "${email}" "${existing_policy}")"
+  else
+    policy="${existing_policy}"
+    log "WARN: could not read signed-in Entra UPN; leaving Argo admin mapping unchanged"
+  fi
+
+  # oc apply three-way-merge will not drop spec.sso when last-applied is missing.
+  # replace removes Dex so oidcConfig is the only SSO path (HCP has no in-cluster OAuth).
+  oc get argocd openshift-gitops -n openshift-gitops -o json | jq \
+    --arg oidc "${oidc_config}" \
+    --arg policy "${policy}" \
+    '
+      del(.status)
+      | del(.metadata.managedFields)
+      | del(.spec.sso)
+      | .spec.oidcConfig = $oidc
+      | .spec.rbac = ((.spec.rbac // {}) + {
+          defaultPolicy: "role:readonly",
+          policy: $policy,
+          scopes: "[email]"
+        })
+    ' | oc replace -f -
+
+  log "Restarting openshift-gitops-server so OIDC does not keep querying Dex (argoproj/argo-cd#14038)"
+  oc rollout restart deploy/openshift-gitops-server -n openshift-gitops
+  oc rollout status deploy/openshift-gitops-server -n openshift-gitops --timeout=180s >/dev/null
+
+  log "GitOps SSO: Entra OIDC on ArgoCD/openshift-gitops (Dex OpenShift OAuth disabled)"
+}

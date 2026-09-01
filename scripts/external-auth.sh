@@ -50,10 +50,6 @@ create_entra_app() {
 
   if load_state && [[ -n "${CLIENT_ID:-}" ]]; then
     log "Reusing Entra app ${CLIENT_ID}"
-    az ad app update \
-      --id "${CLIENT_ID}" \
-      --web-redirect-uris "${callback_url}" "http://localhost:8000" \
-      >/dev/null
   else
     CLIENT_ID="$(az ad app create \
       --display-name "${APP_DISPLAY_NAME}" \
@@ -63,6 +59,9 @@ create_entra_app() {
     az ad sp create --id "${CLIENT_ID}" >/dev/null
     save_state
   fi
+  # Merge console + localhost + GitOps /auth/callback (when the route exists).
+  # Do not replace the list — a replace would drop a GitOps URI added by bootstrap.
+  sync_entra_redirect_uris "${callback_url}"
 
   local manifest
   manifest="$(mktemp)"
@@ -140,6 +139,7 @@ cmd_create() {
 
   if [[ -f "${KUBECONFIG_PATH}" ]]; then
     apply_console_secret_with_retry
+    configure_gitops_oidc
   else
     log "WARN: KUBECONFIG not found at ${KUBECONFIG_PATH}; run make cluster.<name>.kubeconfig then re-run secret step"
     log "Or: oc create secret generic ${EXTERNAL_AUTH_NAME}-console-openshift-console -n openshift-config --from-literal=client""Secret=<value>"

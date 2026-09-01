@@ -57,3 +57,30 @@ output "etcd_key_version" {
 output "etcd_encryption_key_name" {
   value = local.etcd_encryption_key_name
 }
+
+output "pull_secret_key_vault_secret_name" {
+  value = var.pull_secret_key_vault_secret_name
+}
+
+output "key_vault_uri" {
+  value = azurerm_key_vault.this.vault_uri
+}
+
+output "tenant_id" {
+  value = data.azurerm_client_config.current.tenant_id
+}
+
+output "eso_identity_id" {
+  description = "Resource ID of the ESO workload identity (not an HCP cluster identity)."
+  value       = azurerm_user_assigned_identity.eso.id
+}
+
+output "eso_client_id" {
+  description = "Client ID stamped onto the ESO ServiceAccount by the GitOps metadata Job."
+  value       = azurerm_user_assigned_identity.eso.client_id
+}
+
+output "eso_federated_subject" {
+  description = "OIDC subject Terraform trusts. GitOps must create this ServiceAccount name."
+  value       = local.eso_federated_subject
+}

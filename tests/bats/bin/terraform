@@ -56,6 +56,10 @@ JSON
         vnet_integration_subnet_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/integration" ;;
         nsg_id) echo "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg" ;;
         key_vault_name) echo "cust-kv-test" ;;
+        key_vault_uri) echo "https://cust-kv-test.vault.azure.net/" ;;
+        tenant_id) echo "00000000-0000-0000-0000-000000000001" ;;
+        eso_client_id) echo "00000000-0000-0000-0000-000000000099" ;;
+        pull_secret_key_vault_secret_name) echo "redhat-pull-secret" ;;
         etcd_key_version) echo "abc123" ;;
         jump_public_ip)
           if [[ "${TF_MOCK_JUMP:-}" == "1" ]]; then

@@ -1,10 +1,10 @@
 # ARO HCP reference deployment architecture
 
-This document describes the Azure, Entra, and OpenShift resources that result from this repository after `make cluster.<name>.apply` (and optionally `make cluster.<name>.kubeconfig` / `make cluster.<name>.external-auth`). Names below use the defaults from [`clusters/public/terraform.tfvars`](../clusters/public/terraform.tfvars). Substitute your `terraform.tfvars` values when reading the Azure portal.
+This document describes the Azure, Entra, and OpenShift resources that result from this repository after `make cluster.<name>.apply` (and optionally kubeconfig, external-auth, and GitOps bootstrap). Names below use the defaults from [`clusters/public/terraform.tfvars`](../clusters/public/terraform.tfvars). Substitute your `terraform.tfvars` values when reading the Azure portal.
 
-This is a **customer-side** reference. Terraform provisions prerequisites, the HCP cluster, and the default node pool via AzAPI (`2026-06-30-preview`). Bash wrappers call `az aro hcp` for credentials, extra node pools, and external-auth. The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
+This is a **customer-side** reference. Terraform provisions prerequisites, the HCP cluster, and the default node pool via AzAPI (`2026-06-30-preview`). Bash wrappers call `az aro hcp` for credentials, extra node pools, and external-auth. Optional GitOps installs in-cluster operators from [`gitops/`](../gitops/). The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
 
-**Operator guides:** [Documentation site](https://rh-mobb.github.io/aro-hcp/) · [Account prerequisites](prerequisites/account.md) · [Full-stack deployment and per-step permissions](prerequisites/full-stack.md) · [External auth with Entra ID](guides/external-auth-entra-id.md)
+**Operator guides:** [Documentation site](https://rh-mobb.github.io/aro-hcp/) · [Account prerequisites](prerequisites/account.md) · [Full-stack deployment and per-step permissions](prerequisites/full-stack.md) · [External auth with Entra ID](guides/external-auth-entra-id.md) · [GitOps bootstrap](guides/gitops.md)
 
 Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 
@@ -23,6 +23,7 @@ Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 - [Default node pool](#default-node-pool)
 - [Managed resource group](#managed-resource-group)
 - [Credentials and optional Entra](#credentials-and-optional-entra)
+- [GitOps (optional)](#gitops-optional)
 - [Lifecycle](#lifecycle)
 - [Ownership matrix](#ownership-matrix)
 
@@ -95,6 +96,7 @@ flowchart TB
     all --> allSteps
     allSteps --> kube["make cluster.<name>.kubeconfig — optional"]
     kube --> auth["make cluster.<name>.external-auth — optional"]
+    kube --> gitops["make cluster.<name>.bootstrap — optional"]
     allSteps --> destroy["make cluster.<name>.destroy"]
 
     classDef fillStart fill:#d3f9d8,stroke:#2f9e44,color:#000
@@ -105,16 +107,17 @@ flowchart TB
     class start fillStart
     class apply,cluster,nodepool fillTf
     class boot fillCli
-    class kube,auth fillOpt
+    class kube,auth,gitops fillOpt
     class destroy fillDestroy
 ```
 
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
 | `make setup` | `scripts/setup.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
-| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, 13 identities, 28 operator role assignments, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
+| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, optional `redhat-pull-secret`, 13 HCP identities, ESO workload identity + federated credential, 28 operator role assignments + Key Vault Secrets User for ESO, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
 | `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
 | `make cluster.<name>.external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
+| `make cluster.<name>.bootstrap` | `oc apply -k` + Argo `Application` | OpenShift GitOps, Web Terminal, Compliance Operator, External Secrets Operator; ConfigMap `openshift-gitops/aro-platform-metadata` (ESO client ID + vault URI from Terraform outputs); `kube-system/additional-pull-secret` from Key Vault `redhat-pull-secret` (or `PULL_SECRET_PATH`); root app syncs [`gitops/overlays/public`](../gitops/overlays/public/) or [`private`](../gitops/overlays/private/) (from `api_visibility`, or `GITOPS_OVERLAY`). |
 
 `make cluster.<name>.plan` / `apply` / `destroy` pass `clusters/<name>/terraform.tfvars` with `-var-file`. Scripts after apply read terraform outputs, then fall back to the same file.
 
@@ -174,6 +177,8 @@ flowchart TB
 RG-scoped Owner / Contributor+UAA is enough for this repo because VNet, NSG, Key Vault, identities, and the cluster all live in one RG. A pre-existing VNet in another RG would also need UAA (or Owner) on that VNet.
 
 `make cluster.<name>.kubeconfig` (`requestAdminCredential`) needs Contributor (or higher) on the cluster resource. It does not need Entra admin roles.
+
+`make cluster.<name>.bootstrap` needs **Key Vault Secrets User** (or the deployer’s **Key Vault Administrator**) on the customer vault to `get` `redhat-pull-secret`, plus OpenShift `cluster-admin`. Skip the vault get if `PULL_SECRET_PATH` is set or `kube-system/additional-pull-secret` already exists. That is extra Azure RBAC only when GitOps is split from apply.
 
 Typical failure if UAA is missing:
 
@@ -269,8 +274,8 @@ flowchart TB
             vnet["VNet — my-cluster-vnet 10.0.0.0/16"]
             kv["Key Vault — cust-kv-xxxxxxxxxxxx"]
             etcdKey["Key — etcd-data-kms-encryption-key"]
-            ids["13 user-assigned identities"]
-            rbac["28 operator role assignments + Key Vault Administrator"]
+            ids["13 HCP identities + ESO workload identity"]
+            rbac["28 operator assignments + ESO Key Vault Secrets User + deployer Key Vault Administrator"]
             cluster["hcpOpenShiftClusters/my-cluster"]
             np["nodePools/np-1"]
         end
@@ -311,7 +316,7 @@ Exact object names inside the managed RG are chosen by the resource provider and
 
 ## Customer resource group
 
-Terraform resources live under [`modules/`](../modules/) (composed by [`terraform/`](../terraform/)). Identity count and operator assignment count are asserted in [`modules/identities/identities.tftest.hcl`](../modules/identities/identities.tftest.hcl) (13 identities, 28 operator assignments).
+Terraform resources live under [`modules/`](../modules/) (composed by [`terraform/`](../terraform/)). HCP identity count and operator assignment count are asserted in [`modules/identities/identities.tftest.hcl`](../modules/identities/identities.tftest.hcl) (13 HCP identities, 28 operator assignments). The ESO workload identity is extra and is not attached to the cluster ARM resource.
 
 ### Inventory
 
@@ -329,9 +334,13 @@ Terraform resources live under [`modules/`](../modules/) (composed by [`terrafor
 | Linux VM | `${cluster_name}-jump` | `module.jumpbox[].azurerm_linux_virtual_machine.jump` | Fedora Cloud, `Standard_D2s_v6`, admin `fedora`. Only created when `enable_jumpbox = true`. |
 | Key Vault | `cust-kv-` + 13-char random | `azurerm_key_vault.this` | RBAC authorization, public network access, soft-delete 7 days, purge protection off. |
 | Key Vault key | `etcd-data-kms-encryption-key` | `azurerm_key_vault_key.etcd_encryption` | RSA 2048; wrap/unwrap/encrypt/decrypt/sign/verify. |
-| User-assigned identity × 13 | `${cluster_name}-…` | `azurerm_user_assigned_identity.*` | See [Identities and RBAC](#identities-and-rbac). |
+| Key Vault secret | `redhat-pull-secret` | `azurerm_key_vault_secret.pull_secret` | Optional. Created when `pull_secret_path` / `PULL_SECRET_PATH` is set. Dockerconfigjson for OperatorHub; value is never a Terraform output. |
+| User-assigned identity × 13 | `${cluster_name}-…` | `azurerm_user_assigned_identity.*` | HCP operators. See [Identities and RBAC](#identities-and-rbac). |
+| User-assigned identity × 1 | `${cluster_name}-eso` | `azurerm_user_assigned_identity.eso` | External Secrets Operator workload identity. Not in `cluster_identity_ids`. |
 | Role assignment × 28 | — | `azurerm_role_assignment.this` | Operator RBAC for cluster managed identities. |
-| Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key. |
+| Role assignment × 1 | Key Vault Secrets User | `azurerm_role_assignment.eso_key_vault_secrets_user` | ESO identity on the customer vault. |
+| Federated identity credential × 1 | `eso-external-secrets` | `azurerm_federated_identity_credential.eso` | Trusts `system:serviceaccount:external-secrets-operator:external-secrets-sa` against the cluster OIDC issuer. |
+| Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key and optional pull secret. |
 | HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
 | Node pool | `np-1` | `azapi_resource.node_pool` | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms this resource first. |
 
@@ -421,11 +430,15 @@ kms.activeKey.version: <azurerm_key_vault_key.etcd_encryption.version>
 
 The KMS identity (`${cluster_name}-kms`) has **Key Vault Crypto User** on the vault. The cluster resource is created only after that assignment exists.
 
+Optional **Red Hat pull secret**: when `pull_secret_path` is set (or Make exports `TF_VAR_pull_secret_path` from `PULL_SECRET_PATH`), Terraform writes a Key Vault secret named `redhat-pull-secret` (`pull_secret_key_vault_secret_name`). The dockerconfigjson is stored in Terraform state as a sensitive value; outputs expose only the vault name and secret name. Clearing `pull_secret_path` after upload **deletes** that Key Vault secret on the next apply — keep the path in gitignored tfvars or pass `PULL_SECRET_PATH` on every apply while Terraform should manage it.
+
+`make cluster.<name>.bootstrap` reads that Key Vault secret (`az keyvault secret show`) and applies `kube-system/additional-pull-secret` once so OperatorHub can start. After GitOps is up, External Secrets Operator refreshes the same secret from Key Vault using the ESO workload identity (see [GitOps](#gitops-optional)). `PULL_SECRET_PATH` on bootstrap still wins as an override. HCP has no classic ARO `clusterProfile.pullSecret`; do not patch `openshift-config/pull-secret`.
+
 Terraform sets `purge_soft_delete_on_destroy = true` on the azurerm provider so `make cluster.<name>.destroy` can purge the vault. Redeploying without purge can collide on the random vault name only if a soft-deleted vault with the same name still exists.
 
 ## Identities and RBAC
 
-Thirteen user-assigned identities (service + 9 control-plane operators + 3 data-plane operators). Names are `${cluster_name}-<role>` with **no** random suffix (unlike older demo Bicep).
+Thirteen **HCP** user-assigned identities (service + 9 control-plane operators + 3 data-plane operators). Names are `${cluster_name}-<role>` with **no** random suffix (unlike older demo Bicep). A fourteenth identity `${cluster_name}-eso` is for External Secrets Operator only; it is not in `cluster_identity_ids` and is not passed to the cluster ARM resource.
 
 ```mermaid
 flowchart TB
@@ -479,6 +492,7 @@ flowchart TB
 | `dp_disk_csi_driver` | `${cluster_name}-dp-disk-csi-driver` | DP `disk-csi-driver` |
 | `dp_file_csi_driver` | `${cluster_name}-dp-file-csi-driver` | DP `file-csi-driver` |
 | `dp_image_registry` | `${cluster_name}-dp-image-registry` | DP `image-registry` |
+| `eso` | `${cluster_name}-eso` | Not an HCP operator. GitOps workload identity for External Secrets Operator. |
 
 ### Built-in role GUIDs
 
@@ -495,6 +509,7 @@ From [`modules/identities/locals.tf`](../modules/identities/locals.tf):
 | `image_registry_operator` | `8b32b316-c2f5-4ddf-b05b-83dacd2d08b5` |
 | `network_operator` | `be7a6435-15ae-4171-8f30-4a343eff9e8f` |
 | `key_vault_crypto_user` | `12338af0-0e69-4776-bea7-57ae8d297424` |
+| `key_vault_secrets_user` | `4633458b-17de-408a-b874-0445c86b69e6` |
 | `reader` | `acdd72a7-3385-48ef-bd42-f606fba81ae7` |
 | `federated_credential` | `ef318e2a-8334-4a05-9e4a-295a196c6a6e` |
 
@@ -534,6 +549,8 @@ CAPI, CCM, ingress, file CSI, and image registry are assigned on the **VNet** (a
 | `dp-file-nsg` | dp-file-csi-driver | File storage operator | NSG |
 
 Control-plane disk CSI has **no** network-scoped Azure role in this set — only service Reader on the identity. Data-plane file CSI is the DP identity that receives file-storage operator on subnet + NSG.
+
+`${cluster_name}-eso` has **Key Vault Secrets User** on the customer vault (not in the 28-row table). Terraform also creates federated identity credential `eso-external-secrets` on that identity after the cluster exists: issuer is `platform.issuerUrl`, audience `api://AzureADTokenExchange`, subject `system:serviceaccount:external-secrets-operator:external-secrets-sa`. The ServiceAccount does not need to exist yet. Bootstrap publishes those values into ConfigMap `openshift-gitops/aro-platform-metadata`; a GitOps Job annotates the ServiceAccount. Do not put per-cluster client IDs or vault URLs into committed `gitops/overlays/`.
 
 ```mermaid
 flowchart LR
@@ -716,7 +733,7 @@ flowchart TB
 
 `make cluster.<name>.external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
 
-1. Reads `properties.console.url` and registers redirect URIs: `<console>/auth/callback` and `http://localhost:8000`.
+1. Reads `properties.console.url` and **merges** redirect URIs: `<console>/auth/callback`, `http://localhost:8000`, and `<gitops-server>/auth/callback` when the GitOps route exists (so a re-run does not drop GitOps SSO).
 2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${cluster_name}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
 3. Sets optional claims for `groups` on id/access/SAML tokens.
 4. Rotates a client secret.
@@ -726,11 +743,44 @@ flowchart TB
    - username claim `preferred_username`, `NoPrefix`
    - groups claim
    - confidential console client + public CLI client
-6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret).
+6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret). If Argo CD is already installed, copies that secret into `openshift-gitops/argocd-secret` (`oidc.entra` credential key) and patches `ArgoCD/openshift-gitops`: remove `spec.sso` (Dex OpenShift OAuth), set `spec.oidcConfig` to the Entra issuer. Does **not** rotate the Entra secret again (that would break the console).
 
 Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make cluster.<name>.external-auth`.
 
 Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Those create in-cluster `ClusterRoleBinding` objects (`entra-cluster-admin`), not Azure RBAC.
+
+## GitOps (optional)
+
+`make cluster.<name>.bootstrap` after kubeconfig. Operator guide: **[GitOps bootstrap](guides/gitops.md)**.
+
+Terraform does not own in-cluster operators. Bootstrap:
+
+1. Ensures `kube-system/additional-pull-secret` (from `PULL_SECRET_PATH`, else Key Vault `redhat-pull-secret`) and waits for HCCO `global-pull-secret`.
+2. Applies [`gitops/bootstrap/`](../gitops/bootstrap/) (OpenShift GitOps `Subscription`, channel `gitops-1.19`, `installPlanApproval: Automatic`).
+3. Waits for the CSV and the default Argo CD instance (`openshift-gitops`).
+4. Publishes ConfigMap `openshift-gitops/aro-platform-metadata` from Terraform outputs (`esoClientId`, `azureTenantId`, `keyVaultUri`, `keyVaultName`, `pullSecretKeyVaultSecretName`). Same handshake as ROSA `rosa-platform-metadata`.
+5. Applies [`gitops/overlays/<profile>/`](../gitops/overlays/) (Web Terminal, Compliance Operator, External Secrets Operator). A Job waits for the ConfigMap, annotates `external-secrets-sa`, and applies `ClusterSecretStore` plus `ExternalSecret` for `additional-pull-secret`.
+6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at this repo. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts).
+7. If external-auth already ran: merge the GitOps `/auth/callback` redirect URI, copy the console client secret into `argocd-secret`, and patch the default `ArgoCD/openshift-gitops` CR for Entra OIDC (disable Dex). Skip with a log line when `.external-auth/state.env` or the console secret is missing.
+
+HCP has no in-cluster OAuth server. The operator default (`spec.sso.dex.openShiftOAuth: true`) cannot authenticate GitOps users; do not GitOps-own a second Argo CD instance to fix that — patch the prebuilt CR from bootstrap. Client ID and secret stay out of committed `gitops/` YAML.
+
+Public and private overlays are the same baseline today. Private API still needs sshuttle before `oc`. Do not install the same operators from Software Catalog.
+
+```mermaid
+flowchart LR
+    boot["bootstrap"] --> sub["OLM Subscription GitOps"]
+    sub --> argo["Argo CD openshift-gitops"]
+    argo --> overlay["gitops/overlays/profile"]
+    overlay --> wt["Web Terminal"]
+    overlay --> co["Compliance Operator"]
+    overlay --> eso["External Secrets Operator"]
+    meta["aro-platform-metadata"] --> eso
+
+    classDef fillGit fill:#e5dbff,stroke:#5f3dc4,color:#000
+    class boot,sub,argo,overlay,wt,co,eso,meta fillGit
+```
+
 
 ```mermaid
 sequenceDiagram
@@ -761,7 +811,9 @@ stateDiagram-v2
     Authed --> ConsoleReady: make external-auth
     Usable --> Destroying: make cluster.<name>.destroy
     Authed --> Destroying
-    ConsoleReady --> Destroying
+    Authed --> GitOps: make cluster.<name>.bootstrap
+    ConsoleReady --> GitOps
+    GitOps --> Destroying
     Destroying --> [*]
 ```
 
@@ -797,6 +849,10 @@ flowchart TB
 | Entra app + secret | `external-auth.sh` | `external-auth.sh delete` | Yes; lives in the tenant, not the RG |
 | `externalAuths/entra` | `az aro hcp` | `external-auth.sh delete` | Via CLI |
 | Console secret in `openshift-config` | `oc apply` | `oc delete` / external-auth delete | Yes, in-cluster |
+| GitOps / Web Terminal / Compliance / ESO Subscriptions | `cluster.<name>.bootstrap` then Argo | Delete Subscriptions / uninstall from console; not Terraform | Yes, in-cluster |
+| `openshift-gitops/aro-platform-metadata` | bootstrap from Terraform outputs | `oc delete`; overwritten on next bootstrap | Yes, in-cluster |
+| GitOps Entra OIDC (`ArgoCD` `oidcConfig` + `argocd-secret` key) | bootstrap or external-auth when both exist | Next bootstrap / external-auth overwrite; Entra app delete breaks login | Yes, in-cluster; secret copied from console secret |
+| `kube-system/additional-pull-secret` | bootstrap from Key Vault or `PULL_SECRET_PATH`; ESO refreshes | `oc delete`; not Terraform | Yes, in-cluster (HCCO merges to kubelet) |
 
 ## Related repo files
 
@@ -804,7 +860,7 @@ flowchart TB
 |------|------|
 | [`terraform/`](../terraform/) | Thin root: module composition + optional jumpbox |
 | [`modules/network/`](../modules/network/) | RG, VNet, NSG, subnets |
-| [`modules/identities/`](../modules/identities/) | Key Vault, etcd key, 13 MIs, RBAC |
+| [`modules/identities/`](../modules/identities/) | Key Vault, etcd key, optional pull-secret KV secret, 13 HCP MIs + ESO identity, RBAC |
 | [`modules/cluster/`](../modules/cluster/) | AzAPI `hcpOpenShiftClusters` + default `nodePools` |
 | [`modules/jumpbox/`](../modules/jumpbox/) | Optional Fedora jump VM |
 | [`hack/versions/`](../hack/versions/) | Tiny Terraform root for `make cluster.<name>.versions` |
@@ -816,6 +872,8 @@ flowchart TB
 | [`scripts/nodepool.sh`](../scripts/nodepool.sh) | Extra node pool lifecycle |
 | [`scripts/credentials.sh`](../scripts/credentials.sh) | Admin kubeconfig |
 | [`scripts/external-auth.sh`](../scripts/external-auth.sh) | Entra + external-auth |
+| [`gitops/`](../gitops/) | Optional GitOps Kustomize + operator Subscriptions |
+| [`scripts/gitops-bootstrap.sh`](../scripts/gitops-bootstrap.sh) | Install GitOps operator and plant root Argo Application |
 | [`clusters/public/terraform.tfvars`](../clusters/public/terraform.tfvars) | Names and versions |
 | [`AGENTS.md`](../AGENTS.md) | Source precedence when docs disagree |
 | [`README.md`](../README.md) | Operator quickstart |

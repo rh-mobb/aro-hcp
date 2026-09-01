@@ -1,0 +1,143 @@
+# Stamp workload-identity annotations and per-cluster Azure Key Vault store
+# from bootstrap ConfigMap openshift-gitops/aro-platform-metadata.
+# Terraform must not write those values into this git tree.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: eso-from-metadata
+  namespace: external-secrets-operator
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 6
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: eso-from-metadata
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: eso-from-metadata
+      containers:
+        - name: apply
+          image: registry.redhat.io/openshift4/ose-cli:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: METADATA_NS
+              value: openshift-gitops
+            - name: METADATA_NAME
+              value: aro-platform-metadata
+            - name: ESO_NS
+              value: external-secrets-operator
+            - name: ESO_SA
+              value: external-secrets-sa
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              set -euo pipefail
+
+              wait_for() {
+                local desc="$1"
+                shift
+                local i
+                for i in $(seq 1 90); do
+                  if "$@" >/dev/null 2>&1; then
+                    return 0
+                  fi
+                  sleep 10
+                done
+                echo "timed out waiting for ${desc}" >&2
+                exit 1
+              }
+
+              echo "Waiting for ConfigMap ${METADATA_NS}/${METADATA_NAME}"
+              wait_for "platform metadata ConfigMap" oc -n "${METADATA_NS}" get configmap "${METADATA_NAME}"
+
+              CLIENT_ID="$(oc -n "${METADATA_NS}" get configmap "${METADATA_NAME}" -o jsonpath='{.data.esoClientId}')"
+              TENANT_ID="$(oc -n "${METADATA_NS}" get configmap "${METADATA_NAME}" -o jsonpath='{.data.azureTenantId}')"
+              VAULT_URI="$(oc -n "${METADATA_NS}" get configmap "${METADATA_NAME}" -o jsonpath='{.data.keyVaultUri}')"
+              SECRET_NAME="$(oc -n "${METADATA_NS}" get configmap "${METADATA_NAME}" -o jsonpath='{.data.pullSecretKeyVaultSecretName}')"
+              SECRET_NAME="${SECRET_NAME:-redhat-pull-secret}"
+
+              if [[ -z "${CLIENT_ID}" || -z "${TENANT_ID}" || -z "${VAULT_URI}" ]]; then
+                echo "ConfigMap ${METADATA_NAME} missing esoClientId, azureTenantId, or keyVaultUri (re-run apply + bootstrap)" >&2
+                exit 1
+              fi
+
+              echo "Waiting for ServiceAccount ${ESO_NS}/${ESO_SA}"
+              wait_for "ESO ServiceAccount" oc -n "${ESO_NS}" get serviceaccount "${ESO_SA}"
+
+              oc -n "${ESO_NS}" annotate serviceaccount "${ESO_SA}" \
+                "azure.workload.identity/client-id=${CLIENT_ID}" \
+                "azure.workload.identity/tenant-id=${TENANT_ID}" \
+                --overwrite
+
+              echo "Waiting for External Secrets Operator CRDs"
+              wait_for "ExternalSecretsConfig CRD" oc get crd externalsecretsconfigs.operator.openshift.io
+              wait_for "ClusterSecretStore CRD" oc get crd clustersecretstores.external-secrets.io
+              wait_for "ExternalSecret CRD" oc get crd externalsecrets.external-secrets.io
+
+              oc apply -f - <<EOF
+              apiVersion: operator.openshift.io/v1alpha1
+              kind: ExternalSecretsConfig
+              metadata:
+                name: cluster
+              spec:
+                controllerConfig:
+                  networkPolicies:
+                    - name: allow-external-secrets-egress
+                      componentName: ExternalSecretsCoreController
+                      egress:
+                        - ports:
+                            - port: 443
+                              protocol: TCP
+              EOF
+
+              oc apply -f - <<EOF
+              apiVersion: external-secrets.io/v1
+              kind: ClusterSecretStore
+              metadata:
+                name: customer-key-vault
+              spec:
+                provider:
+                  azurekv:
+                    authType: WorkloadIdentity
+                    vaultUrl: "${VAULT_URI}"
+                    tenantId: "${TENANT_ID}"
+                    useAzureSDK: true
+                    serviceAccountRef:
+                      name: ${ESO_SA}
+                      namespace: ${ESO_NS}
+              EOF
+
+              oc apply -f - <<EOF
+              apiVersion: external-secrets.io/v1
+              kind: ExternalSecret
+              metadata:
+                name: additional-pull-secret
+                namespace: kube-system
+              spec:
+                refreshInterval: 1h
+                secretStoreRef:
+                  kind: ClusterSecretStore
+                  name: customer-key-vault
+                target:
+                  name: additional-pull-secret
+                  creationPolicy: Merge
+                  deletionPolicy: Retain
+                  template:
+                    engineVersion: v2
+                    type: kubernetes.io/dockerconfigjson
+                    data:
+                      .dockerconfigjson: "{{ .dockerconfigjson }}"
+                data:
+                  - secretKey: dockerconfigjson
+                    remoteRef:
+                      key: ${SECRET_NAME}
+              EOF
+
+              echo "ESO workload identity, ClusterSecretStore, and ExternalSecret applied from platform metadata"

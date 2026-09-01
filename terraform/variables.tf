@@ -236,3 +236,25 @@ variable "node_pool_channel" {
   type        = string
   default     = "stable"
 }
+
+variable "pull_secret_path" {
+  description = "Path to a Red Hat dockerconfigjson pull secret. When set, Terraform writes it to the customer Key Vault as pull_secret_key_vault_secret_name. When empty, Terraform does not create or update that secret (bootstrap still reads it from Key Vault if present). Prefer an absolute path; relative paths are resolved from terraform/."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = trimspace(var.pull_secret_path) == "" || fileexists(var.pull_secret_path)
+    error_message = "pull_secret_path must be an existing file or empty."
+  }
+}
+
+variable "pull_secret_key_vault_secret_name" {
+  description = "Key Vault secret name for the Red Hat pull secret."
+  type        = string
+  default     = "redhat-pull-secret"
+
+  validation {
+    condition     = can(regex("^[0-9a-zA-Z-]{1,127}$", var.pull_secret_key_vault_secret_name))
+    error_message = "pull_secret_key_vault_secret_name must be 1-127 alphanumeric characters or hyphens."
+  }
+}

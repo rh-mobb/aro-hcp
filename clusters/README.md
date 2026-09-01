@@ -45,4 +45,6 @@ Per cluster (gitignored for operator dirs):
 - `.terraform/` — provider cache (`TF_DATA_DIR`)
 - `jump` / `jump.pub` — SSH keypair for the jump VM (when enabled)
 
-Never commit state files, private keys, or kubeconfig.
+Never commit state files, private keys, kubeconfig, or Red Hat pull secrets.
+
+GitOps: `PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply` writes Key Vault `redhat-pull-secret`; `make cluster.<name>.bootstrap` applies it as `kube-system/additional-pull-secret`.

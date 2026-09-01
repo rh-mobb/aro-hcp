@@ -4,7 +4,7 @@ Instructions for AI agents working in this repository.
 
 ## What this repo is
 
-Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 managed identities, RBAC) and the HCP cluster plus default node pool via AzAPI. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
+Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 HCP managed identities plus one External Secrets Operator workload identity, RBAC) and the HCP cluster plus default node pool via AzAPI. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
 
 This is **not** the Azure/ARO-HCP service codebase. Do not refactor `references/ARO-HCP/` or `references/bennerv-ARO-HCP/` (gitignored clones).
 
@@ -23,7 +23,7 @@ When sources disagree:
 - **Do not** copy subnet-scoped CAPI/CCM/ingress RBAC from older Bicep.
 - **`make` is the interface:** run `make fmt lint test` before claiming work is done.
 - **Docs and changelog:** keep [`docs/architecture.md`](docs/architecture.md) in sync with code; update [`CHANGELOG.md`](CHANGELOG.md) only at commit time (see below).
-- **Never commit:** operator `clusters/*/terraform.tfvars` (except committed examples), `clusters/*/infrastructure.tfstate*`, `config/cluster.env`, kubeconfig, Entra secrets, downloaded `*.whl`.
+- **Never commit:** operator `clusters/*/terraform.tfvars` (except committed examples), `clusters/*/infrastructure.tfstate*`, `config/cluster.env`, kubeconfig, Entra secrets, Red Hat pull secrets, downloaded `*.whl`.
 - **Live Azure:** do not `apply` / `destroy` unless the user asked. Follow [Live Azure deployments](#live-azure-deployments).
 - **Git:** feature branches only; Conventional Commits; no `Co-authored-by: Cursor` or AI trailers.
 
@@ -32,13 +32,14 @@ When sources disagree:
 | Path | Purpose |
 |------|---------|
 | `modules/network/` | RG, VNet, NSG, worker + integration subnets |
-| `modules/identities/` | Key Vault, etcd key, 13 MIs, RBAC |
+| `modules/identities/` | Key Vault, etcd key, optional pull-secret KV secret, 13 HCP MIs + ESO workload identity, RBAC |
 | `modules/cluster/` | AzAPI HCP cluster + default node pool |
 | `modules/jumpbox/` | Optional Fedora jump VM |
 | `terraform/` | Thin root: providers, backend, module composition |
 | `clusters/<name>/` | Per-cluster `terraform.tfvars` + state |
-| `scripts/` | Idempotent wrappers: credentials, external-auth, extra node pools, destroy |
-| `docs/` | Operator guides (MkDocs → GitHub Pages): prerequisites, quick start, external-auth, architecture |
+| `scripts/` | Idempotent wrappers: credentials, extra-auth, extra node pools, destroy, GitOps bootstrap |
+| `gitops/` | Optional in-cluster GitOps (OLM Subscriptions + Kustomize overlays) |
+| `docs/` | Operator guides (MkDocs → GitHub Pages): prerequisites, quick start, extra-auth, GitOps, architecture |
 | `mkdocs.yml`, `requirements-docs.txt` | Documentation site config and Python deps |
 | `docs/architecture.md` | Resultant resources, RBAC scopes, architecture diagrams |
 | `docs/prerequisites/full-stack.md` | Least-privilege permissions per `make cluster.<name>.*` target |
@@ -53,6 +54,7 @@ make setup
 make cluster.my-cluster.apply               # terraform apply (cluster + node pool)
 make cluster.my-cluster.kubeconfig          # admin creds (24h TTL)
 make cluster.my-cluster.external-auth       # Entra + console (required for a usable console)
+make cluster.my-cluster.bootstrap    # optional: GitOps + Web Terminal + Compliance
 make cluster.my-cluster.destroy             # reverse teardown (state-rm last pool, then terraform destroy)
 ```
 

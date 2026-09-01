@@ -9,6 +9,24 @@ mock_provider "azurerm" {
   }
 }
 mock_provider "azapi" {
+  mock_resource "azapi_resource" {
+    defaults = {
+      output = {
+        properties = {
+          platform = {
+            issuerUrl = "https://uksouth.oic.aro.azure.com/00000000-0000-0000-0000-000000000001/test"
+          }
+          api = {
+            url = "https://api.example.aroapp.io:6443"
+          }
+          console = {
+            url = "https://console.example.aroapp.io"
+          }
+        }
+      }
+    }
+  }
+
   mock_data "azapi_resource_list" {
     defaults = {
       output = {
@@ -92,4 +110,18 @@ run "jumpbox_requires_public_key" {
   expect_failures = [
     terraform_data.jumpbox_prereqs[0],
   ]
+}
+
+run "eso_federated_credential_trusts_named_sa" {
+  command = plan
+
+  assert {
+    condition     = azurerm_federated_identity_credential.eso.subject == "system:serviceaccount:external-secrets-operator:external-secrets-sa"
+    error_message = "ESO federated credential must trust the GitOps ServiceAccount name before that account exists."
+  }
+
+  assert {
+    condition     = contains(azurerm_federated_identity_credential.eso.audience, "api://AzureADTokenExchange")
+    error_message = "ESO federated credential audience must be api://AzureADTokenExchange."
+  }
 }

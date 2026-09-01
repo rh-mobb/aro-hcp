@@ -49,6 +49,7 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"TF_VAR_node_pool_replicas"* ]]
   [[ "$output" == *"TF_VAR_vnet_name"* ]]
+  [[ "$output" == *"TF_VAR_pull_secret_path"* ]]
   run grep -A6 '^test:' "${mk}"
   [ "$status" -eq 0 ]
   [[ "$output" == *"unset"* ]]

@@ -43,6 +43,7 @@ plan: init jump-pub-check
 		export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
 		export TF_VAR_jump_ssh_private_key_path="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
 	fi; \
+	. "$(SCRIPTS)/lib.sh" && export_tf_var_pull_secret_path; \
 	terraform -chdir=$(TF_DIR) plan -var-file="$(TFVARS)"
 
 apply: init jump-pub-check
@@ -50,6 +51,7 @@ apply: init jump-pub-check
 		export TF_VAR_jump_ssh_public_key="$$(cat "$(JUMP_SSH_PUBLIC_KEY_PATH)")"; \
 		export TF_VAR_jump_ssh_private_key_path="$(JUMP_SSH_PRIVATE_KEY_PATH)"; \
 	fi; \
+	. "$(SCRIPTS)/lib.sh" && export_tf_var_pull_secret_path; \
 	terraform -chdir=$(TF_DIR) apply -auto-approve -var-file="$(TFVARS)"
 
 destroy: init jump-pub-check
@@ -66,9 +68,9 @@ destroy: init jump-pub-check
 setup:
 	bash $(SCRIPTS)/setup.sh
 
-bootstrap:
-	@echo "WARNING: bootstrap is deprecated; use setup (make setup from repo root)" >&2
-	bash $(SCRIPTS)/setup.sh
+bootstrap: setup kubeconfig
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/gitops-bootstrap.sh bootstrap
 
 kubeconfig: setup check-tfvars
 	@export TFVARS="$(TFVARS)"; \
@@ -121,3 +123,4 @@ private-dns: check-tfvars
 private-dns-delete: check-tfvars
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/private-dns.sh delete
+

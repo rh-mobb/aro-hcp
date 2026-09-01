@@ -74,5 +74,6 @@ nav:
       - Full-Stack Deployment: prerequisites/full-stack.md
   - Guides:
       - External Auth (Entra ID): guides/external-auth-entra-id.md
+      - GitOps bootstrap: guides/gitops.md
   - Reference:
       - Architecture: architecture.md

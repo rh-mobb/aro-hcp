@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Prefer the real oc/kubectl for kustomize; other verbs are no-ops for unit tests.
+set -euo pipefail
+
+MOCK_DIR="$(cd "$(dirname "$0")" && pwd)"
+PATH="$(printf '%s' "${PATH}" | tr ':' '\n' | grep -vx "${MOCK_DIR}" | paste -sd: -)"
+
+if [[ "${1:-}" == "kustomize" ]]; then
+  if command -v oc >/dev/null 2>&1; then
+    exec oc "$@"
+  fi
+  if command -v kubectl >/dev/null 2>&1; then
+    exec kubectl "$@"
+  fi
+  echo "oc or kubectl required for gitops kustomize tests" >&2
+  exit 1
+fi
+
+case "${1:-}" in
+  whoami) echo "system:admin" ;;
+  get)
+    if [[ "${2:-}" == "secret" && "${3:-}" == "additional-pull-secret" ]]; then
+      if [[ "${OC_HAS_ADDITIONAL_PULL_SECRET:-0}" == "1" ]]; then
+        echo "additional-pull-secret"
+        exit 0
+      fi
+      echo "Error from server (NotFound): secrets \"additional-pull-secret\" not found" >&2
+      exit 1
+    fi
+    echo "mock oc: $*"
+    ;;
+  create)
+    echo "mock oc create: $*"
+    ;;
+  apply)
+    cat >/dev/null || true
+    echo "mock oc apply: $*"
+    ;;
+  *) echo "mock oc: $*" ;;
+esac
