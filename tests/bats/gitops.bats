@@ -37,6 +37,15 @@ EOF
   [[ "$output" == *"name: openshift-external-secrets-operator"* ]]
   [[ "$output" == *"channel: stable-v1"* ]]
   [[ "$output" == *"name: external-secrets-sa"* ]]
+  [[ "$output" == *"name: argocd-eso-hooks"* ]]
+}
+
+@test "gitops dry-run shows Entra oidcConfig with secret ref" {
+  run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"name: Microsoft Entra ID"* ]]
+  [[ "$output" == *"client""Secret: \$oidc.entra.client""Secret"* ]]
+  [[ "$output" == *"Argo CD Entra OIDC"* ]]
 }
 
 @test "gitops dry-run publishes aro-platform-metadata ConfigMap from terraform outputs" {
@@ -55,6 +64,17 @@ EOF
   [[ "$output" == *"path: gitops/overlays/public"* ]]
   [[ "$output" == *"kind: Application"* ]]
   [[ "$output" == *"prune: false"* ]]
+}
+
+@test "gitops dry-run Application ignores ServiceAccount fields Argo cannot patch" {
+  CLUSTER=public run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ignoreDifferences:"* ]]
+  [[ "$output" == *"kind: ServiceAccount"* ]]
+  [[ "$output" == *"/imagePullSecrets"* ]]
+  [[ "$output" == *"/metadata/annotations"* ]]
+  [[ "$output" == *"RespectIgnoreDifferences=true"* ]]
+  [[ "$output" == *"ApplyOutOfSyncOnly=true"* ]]
 }
 
 @test "gitops dry-run private overlay plants Application path" {

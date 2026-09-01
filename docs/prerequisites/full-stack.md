@@ -146,7 +146,7 @@ Console is not usable until this step completes (ClusterOperator `console` stays
 | Entra | None |
 | OpenShift | Valid admin **kubeconfig**; **sshuttle** if `api_visibility = Private` |
 
-Installs OpenShift GitOps, publishes `aro-platform-metadata`, and syncs [`gitops/`](../../gitops/) (Web Terminal, Compliance, External Secrets Operator). Store the Red Hat dockerconfigjson with `PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply` (Key Vault) then bootstrap. See [GitOps bootstrap](../guides/gitops.md).
+Installs OpenShift GitOps, publishes `aro-platform-metadata`, and syncs [`gitops/`](../../gitops/) (Web Terminal, Compliance, External Secrets Operator). When external-auth already ran, patches the default Argo CD instance for Entra OIDC (HCP has no in-cluster OAuth, so Dex “Log in via OpenShift” cannot work). Store the Red Hat dockerconfigjson with `PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply` (Key Vault) then bootstrap. See [GitOps bootstrap](../guides/gitops.md).
 
 #### `make cluster.<name>.destroy`
 

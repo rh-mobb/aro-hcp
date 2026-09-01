@@ -733,7 +733,7 @@ flowchart TB
 
 `make cluster.<name>.external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
 
-1. Reads `properties.console.url` and registers redirect URIs: `<console>/auth/callback` and `http://localhost:8000`.
+1. Reads `properties.console.url` and **merges** redirect URIs: `<console>/auth/callback`, `http://localhost:8000`, and `<gitops-server>/auth/callback` when the GitOps route exists (so a re-run does not drop GitOps SSO).
 2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${cluster_name}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
 3. Sets optional claims for `groups` on id/access/SAML tokens.
 4. Rotates a client secret.
@@ -743,7 +743,7 @@ flowchart TB
    - username claim `preferred_username`, `NoPrefix`
    - groups claim
    - confidential console client + public CLI client
-6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret).
+6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret). If Argo CD is already installed, copies that secret into `openshift-gitops/argocd-secret` (`oidc.entra` credential key) and patches `ArgoCD/openshift-gitops`: remove `spec.sso` (Dex OpenShift OAuth), set `spec.oidcConfig` to the Entra issuer. Does **not** rotate the Entra secret again (that would break the console).
 
 Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make cluster.<name>.external-auth`.
 
@@ -760,7 +760,10 @@ Terraform does not own in-cluster operators. Bootstrap:
 3. Waits for the CSV and the default Argo CD instance (`openshift-gitops`).
 4. Publishes ConfigMap `openshift-gitops/aro-platform-metadata` from Terraform outputs (`esoClientId`, `azureTenantId`, `keyVaultUri`, `keyVaultName`, `pullSecretKeyVaultSecretName`). Same handshake as ROSA `rosa-platform-metadata`.
 5. Applies [`gitops/overlays/<profile>/`](../gitops/overlays/) (Web Terminal, Compliance Operator, External Secrets Operator). A Job waits for the ConfigMap, annotates `external-secrets-sa`, and applies `ClusterSecretStore` plus `ExternalSecret` for `additional-pull-secret`.
-6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at this repo.
+6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at this repo. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts).
+7. If external-auth already ran: merge the GitOps `/auth/callback` redirect URI, copy the console client secret into `argocd-secret`, and patch the default `ArgoCD/openshift-gitops` CR for Entra OIDC (disable Dex). Skip with a log line when `.external-auth/state.env` or the console secret is missing.
+
+HCP has no in-cluster OAuth server. The operator default (`spec.sso.dex.openShiftOAuth: true`) cannot authenticate GitOps users; do not GitOps-own a second Argo CD instance to fix that — patch the prebuilt CR from bootstrap. Client ID and secret stay out of committed `gitops/` YAML.
 
 Public and private overlays are the same baseline today. Private API still needs sshuttle before `oc`. Do not install the same operators from Software Catalog.
 
@@ -848,6 +851,7 @@ flowchart TB
 | Console secret in `openshift-config` | `oc apply` | `oc delete` / external-auth delete | Yes, in-cluster |
 | GitOps / Web Terminal / Compliance / ESO Subscriptions | `cluster.<name>.bootstrap` then Argo | Delete Subscriptions / uninstall from console; not Terraform | Yes, in-cluster |
 | `openshift-gitops/aro-platform-metadata` | bootstrap from Terraform outputs | `oc delete`; overwritten on next bootstrap | Yes, in-cluster |
+| GitOps Entra OIDC (`ArgoCD` `oidcConfig` + `argocd-secret` key) | bootstrap or external-auth when both exist | Next bootstrap / external-auth overwrite; Entra app delete breaks login | Yes, in-cluster; secret copied from console secret |
 | `kube-system/additional-pull-secret` | bootstrap from Key Vault or `PULL_SECRET_PATH`; ESO refreshes | `oc delete`; not Terraform | Yes, in-cluster (HCCO merges to kubelet) |
 
 ## Related repo files

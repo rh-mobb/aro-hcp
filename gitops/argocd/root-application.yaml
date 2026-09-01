@@ -15,9 +15,21 @@ spec:
     path: gitops/overlays/public
   destination:
     server: https://kubernetes.default.svc
+  # Default GitOps controller may get/list/watch ServiceAccounts but not patch
+  # them. OpenShift adds dockercfg secrets; the metadata Job stamps WI
+  # annotations. Ignore those fields so selfHeal does not fail (and would not
+  # wipe azure.workload.identity/* if patch were allowed).
+  ignoreDifferences:
+    - kind: ServiceAccount
+      jsonPointers:
+        - /imagePullSecrets
+        - /secrets
+        - /metadata/annotations
   syncPolicy:
     automated:
       prune: false
       selfHeal: true
     syncOptions:
       - CreateNamespace=false
+      - RespectIgnoreDifferences=true
+      - ApplyOutOfSyncOnly=true

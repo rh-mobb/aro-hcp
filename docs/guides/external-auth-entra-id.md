@@ -32,10 +32,11 @@ graph TB
 
 The script:
 
-1. Creates or updates an Entra app registration (redirect URIs include console `/auth/callback`).
-2. Resets a client secret for the confidential console client.
+1. Creates or updates an Entra app registration. Redirect URIs are **merged**: console `/auth/callback`, `http://localhost:8000`, and GitOps `/auth/callback` when the `openshift-gitops-server` route exists. A re-run does not drop a GitOps URI.
+2. Resets a client secret for the confidential console client (create path only — GitOps SSO copies this secret and must not reset it again).
 3. Calls `az aro hcp cluster external-auth create` (issuer, audience, username claim, groups claim, console + CLI clients).
 4. Applies the console client secret to `openshift-config` using the **24h admin kubeconfig**.
+5. If the default Argo CD instance is already installed, patches it for Entra OIDC (same app). Otherwise `make cluster.<name>.bootstrap` does that patch after GitOps is up.
 
 Run `make cluster.<name>.kubeconfig` before `external-auth`.
 
@@ -136,7 +137,9 @@ Users authenticating to the console or `oc login --exec-plugin=oc-oidc` may see 
 | `Authorization_RequestDenied` on `az ad app create` / `credential reset` | User app registration disabled; no Application Developer | Assign Application Developer or have admin create app + add you as owner |
 | `AADSTS65001` | Missing consent | Admin consent for Azure CLI Graph scopes and/or OIDC app |
 | Console 503 / “Application is not available” | External-auth not run or secret missing | Re-run `make cluster.<name>.external-auth` after fresh kubeconfig |
-| Invalid redirect URI | Console URL changed or wrong callback | Re-run create — script updates redirect URIs from live console URL |
+| Invalid redirect URI | Console URL changed or wrong callback | Re-run create — script **merges** redirect URIs from live console URL (and GitOps route if present) |
+| GitOps “Log in via OpenShift” / Dex connection refused | Default Dex uses in-cluster OAuth, which HCP does not have | Run external-auth then bootstrap; GitOps login is **Microsoft Entra ID**, not OpenShift OAuth |
+| GitOps `/auth/callback` blank | Missing OAuth state cookie or server still querying Dex after the SSO switch | Use a normal browser (not an IDE webview). Bootstrap restarts `openshift-gitops-server` after the OIDC patch. |
 | Secret step skipped | No kubeconfig at external-auth time | `make cluster.<name>.kubeconfig` then re-run external-auth |
 
 ## Delete external auth

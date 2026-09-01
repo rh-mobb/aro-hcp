@@ -246,6 +246,9 @@ cmd_bootstrap() {
     render_platform_metadata
     echo "---"
     render_root_application "${overlay}"
+    echo "---"
+    echo "# Argo CD Entra OIDC (applied when external-auth + GitOps route exist; not in git)"
+    render_argocd_oidc_config "https://login.microsoftonline.com/\${tenantId}/v2.0" "CLIENT_ID"
     return 0
   fi
 
@@ -267,6 +270,9 @@ cmd_bootstrap() {
 
   log "Planting root Application (repo=${GITOPS_REPO} revision=${GITOPS_REVISION} path=gitops/overlays/${overlay})"
   render_root_application "${overlay}" | oc apply -f -
+
+  configure_gitops_oidc
+
   log "GitOps bootstrap complete. Argo CD syncs gitops/overlays/${overlay} (prune=false)."
   log "Do not install these operators again from Software Catalog (Classic would fight this Subscription)."
 }
@@ -282,7 +288,7 @@ Environment:
   GITOPS_OVERLAY       Overlay directory (public, private, or a custom overlay)
   GITOPS_REPO          Git URL (default: https://github.com/rh-mobb/aro-hcp.git)
   GITOPS_REVISION      Branch/tag/commit (default: main)
-  GITOPS_DRY_RUN=1     Print kustomize, platform-metadata ConfigMap, and Application YAML; do not talk to the cluster
+  GITOPS_DRY_RUN=1     Print kustomize, platform-metadata ConfigMap, Application YAML, and Entra oidcConfig; do not talk to the cluster
   KUBECONFIG_PATH      Default: .kube/config
   PULL_SECRET_PATH     dockerconfigjson file → kube-system/additional-pull-secret (overrides Key Vault)
   KEY_VAULT_NAME       Override terraform output key_vault_name

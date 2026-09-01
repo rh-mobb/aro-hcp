@@ -160,6 +160,9 @@ Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet sco
 | GitOps CSV never Succeeded | Channel not in catalog for this OCP version | Bump `gitops/bootstrap/subscription.yaml` `channel` to the current `gitops-1.x` (see [GitOps guide](docs/guides/gitops.md)) |
 | GitOps bundle ImagePullBackOff `registry.redhat.io` | HCP pull secret is only the service ACR | `PULL_SECRET_PATH=<dockerconfigjson> make cluster.<name>.apply` stores it in Key Vault; `make cluster.<name>.bootstrap` creates `kube-system/additional-pull-secret` |
 | Duplicate GitOps / Web Terminal operators | Installed from Software Catalog as well as GitOps | Delete the extra Subscription; keep the GitOps-managed one |
+| GitOps “Log in via OpenShift” / Dex connection refused | HCP has no in-cluster OAuth; default Dex `openShiftOAuth` is invalid | `make cluster.<name>.external-auth` then `make cluster.<name>.bootstrap` — login is Entra, not OpenShift |
+| GitOps `/auth/callback` blank (`named cookie not present`) | OAuth state cookie missing (embedded browser) **or** server still using Dex after SSO switch | Login in Chrome/Safari/Firefox; bootstrap restarts `openshift-gitops-server` after the OIDC patch |
+| GitOps sync: cannot patch `external-secrets-sa` | Default GitOps controller has no ServiceAccount patch; selfHeal fights Job/OpenShift annotations | Re-bootstrap (Application `ignoreDifferences` + `RespectIgnoreDifferences`). Do not grant the controller SA patch. |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
 | `oc` cannot reach API hostname | `api_visibility = "Private"` without VNet path or API DNS | `make cluster.<name>.sshuttle.connect`; `make cluster.<name>.private-dns`; merge `clusters/<name>/operator-hosts.snippet` into `/etc/hosts` if needed |
