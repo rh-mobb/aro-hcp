@@ -26,3 +26,13 @@ output "oidc_issuer_url" {
   description = "Cluster OIDC issuer used for workload-identity federated credentials."
   value       = try(azapi_resource.hcp_cluster.output.properties.platform.issuerUrl, null)
 }
+
+output "dns_base_domain" {
+  description = "Service-assigned HCP DNS zone (properties.dns.baseDomain)."
+  value       = try(azapi_resource.hcp_cluster.output.properties.dns.baseDomain, null)
+}
+
+output "dns_base_domain_prefix" {
+  description = "DNS label for the cluster (properties.dns.baseDomainPrefix)."
+  value       = try(azapi_resource.hcp_cluster.output.properties.dns.baseDomainPrefix, null)
+}

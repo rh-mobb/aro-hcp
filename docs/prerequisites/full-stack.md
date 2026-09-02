@@ -9,6 +9,7 @@ Layer **1** — one platform team runs the complete lifecycle from this reposito
 | Resource group, VNet, NSG, worker + integration subnets | [`modules/network/`](../../modules/network/) |
 | Key Vault, etcd KMS key, optional pull-secret KV secret, 13 HCP identities + ESO identity, 28 operator RBAC assignments + ESO Key Vault Secrets User | [`modules/identities/`](../../modules/identities/) |
 | HCP cluster + default node pool (AzAPI) | [`modules/cluster/`](../../modules/cluster/) |
+| Entra OIDC app, KV client secret, `externalAuths/entra` | [`modules/entra/`](../../modules/entra/) |
 | Optional Fedora jump VM | [`modules/jumpbox/`](../../modules/jumpbox/) |
 
 You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `clusters/<name>/infrastructure.tfstate`.
@@ -60,7 +61,7 @@ make cluster.<name>.private-dns         # customer Private DNS for api.*.aroapp-
 Teardown:
 
 ```bash
-make cluster.<name>.external-auth-delete   # recommended before destroy if Entra app exists
+make cluster.<name>.external-auth-delete   # in-cluster console secret only when TF owns Entra
 make cluster.<name>.destroy
 ```
 
@@ -77,18 +78,18 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | List enabled versions | `cluster.<name>.versions` | **Reader** on subscription (read `hcpOpenShiftVersions`) | None | None |
 | Terraform init | `cluster.<name>.init` | None (local providers) | None | None |
 | Terraform plan | `cluster.<name>.plan` | **Reader** on subscription + customer RG; same as apply if state exists | None | None |
-| Create / update infra | `cluster.<name>.apply` | **Contributor + UAA** or **Owner** on customer RG; subscription **Contributor** once if RPs not registered | None | None |
+| Create / update infra | `cluster.<name>.apply` | **Contributor + UAA** or **Owner** on customer RG; subscription **Contributor** once if RPs not registered | App create (Graph) when `enable_external_auth` (default) | None |
 | Admin kubeconfig | `cluster.<name>.kubeconfig` | **Contributor** on cluster resource (or RG) | None | None |
 | Revoke admin creds | `cluster.<name>.revoke-credentials` | **Contributor** on cluster resource | None | None |
-| External auth + console | `cluster.<name>.external-auth` | **Contributor** on cluster (`externalAuths` write) | App create + credential reset — see [Entra guide](../guides/external-auth-entra-id.md) | **cluster-admin** kubeconfig (24h) for console secret and optional `entra-cluster-admin` (`SKIP_RBAC_USER=1` skips the user binding) |
-| Remove external auth | `cluster.<name>.external-auth-delete` | **Contributor** on cluster | App **owner** or role with `Application.ReadWrite.All` delegated via Azure CLI | Optional admin kubeconfig to delete secret |
+| Console secret + CRBs | `cluster.<name>.external-auth` | None when Terraform owns Entra (Key Vault get) | None when Terraform owns Entra | **cluster-admin** kubeconfig (24h) for console secret and optional `entra-cluster-admin` (`SKIP_RBAC_USER=1` skips the user binding) |
+| Remove in-cluster console secret | `cluster.<name>.external-auth-delete` | None when Terraform owns Entra | None (does not delete the TF app) | Optional admin kubeconfig to delete secret |
 | Print sshuttle command | `cluster.<name>.jump` | None (reads tfvars / outputs) | None | None |
 | Start sshuttle (background) | `cluster.<name>.sshuttle.connect` | None (reads tfvars / outputs; jump VM must exist) | None | None |
 | Stop sshuttle | `cluster.<name>.sshuttle.disconnect` | None | None | None |
 | Customer Private DNS (private API) | `cluster.<name>.private-dns` | **Contributor** on customer RG (Private DNS zone + VNet link + A records); **Reader** on managed RG (`hypershift.local` A record) | None | None |
 | Retry console OAuth secret | `cluster.<name>.console-secret` | None | App credential reset if re-running | **cluster-admin** kubeconfig + sshuttle for private API |
 | GitOps + operator baseline | `cluster.<name>.bootstrap` | **Key Vault Secrets User** (or deployer Key Vault Administrator) to `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set | None | **cluster-admin** kubeconfig; sshuttle if API is private |
-| Destroy | `cluster.<name>.destroy` | Same as **apply** (delete cluster, network, identities); runs `private-dns-delete` when API is private | Same as **external-auth-delete** if cleaning Entra app manually first | Optional admin kubeconfig if deleting console secret |
+| Destroy | `cluster.<name>.destroy` | Same as **apply** | Deletes Terraform-managed Entra app | Optional admin kubeconfig if deleting console secret |
 | Extra node pool | `scripts/nodepool.sh create` | **Contributor** on cluster (`nodePools` write) | None | None |
 
 ### Azure RBAC detail by target
@@ -106,6 +107,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/write` | Cluster ARM resource |
 | `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools/write` | Default node pool |
 | `Microsoft.Compute/*` (when jump enabled) | Jump VM, NIC, public IP |
+| `Microsoft.RedHatOpenShift/hcpOpenShiftClusters/externalAuths/write` | Entra OIDC child (when `enable_external_auth`) |
 | Provider register (subscription) | If `Microsoft.RedHatOpenShift` not registered — see [Account prerequisites](account.md#resource-provider-registration) |
 
 **Least privilege:** **Contributor + User Access Administrator** at customer RG scope. Avoid subscription **Owner** when RG-scoped roles satisfy policy.
@@ -132,8 +134,8 @@ Calls `az aro hcp cluster request-credential` / `revoke-credential`. Requires **
 
 | Plane | Minimum |
 |-------|---------|
-| Azure | **Contributor** on cluster — creates `externalAuths` child resource |
-| Entra | Create app, SP, optional claims, client secret — [External auth guide](../guides/external-auth-entra-id.md) |
+| Azure | **Key Vault Secrets User** (or deployer Key Vault Administrator) to `get` the Entra client secret |
+| Entra | None when Terraform owns the app |
 | OpenShift | Valid admin **kubeconfig** — applies `openshift-config` console secret and binds the signed-in Entra user as OpenShift `cluster-admin` (`entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. Fleet group admins: cluster-config GitOps. Optional `GROUP_ID=` is a one-shot group binding. |
 
 Console is not usable until this step completes (ClusterOperator `console` stays degraded without the OAuth secret).
@@ -150,7 +152,7 @@ Installs OpenShift GitOps, publishes `aro-platform-metadata`, and syncs [`gitops
 
 #### `make cluster.<name>.destroy`
 
-Same Azure permissions as **apply** (delete resources). Run **external-auth-delete** first if you need to remove the Entra app registration; destroy does not call Entra automatically.
+Same Azure permissions as **apply** (delete resources, including the Entra app). `external-auth-delete` only removes the in-cluster console secret when Terraform owns Entra.
 
 ### Optional: custom Azure roles
 
@@ -164,9 +166,9 @@ GitOps bootstrap, if not run by the deployer, also needs **Key Vault Secrets Use
 
 Maintaining parity with [`modules/identities/`](../../modules/identities/) role assignment set is the operator’s responsibility if you deviate from UAA.
 
-### Entra and OpenShift (external-auth only)
+### Entra (apply + console secret)
 
-Full step-by-step, consent, and directory role matrix: **[External authentication with Entra ID](../guides/external-auth-entra-id.md)**.
+Full step-by-step, consent, and directory role matrix: **[External authentication with Entra ID](../guides/external-auth-entra-id.md)**. App registration happens at **`make cluster.<name>.apply`** (Terraform). The `external-auth` make target applies the in-cluster secret.
 
 Quick reference:
 

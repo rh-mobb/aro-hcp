@@ -1,6 +1,6 @@
 # ARO HCP Reference Deployment
 
-Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI) for Azure prerequisites, the HCP cluster, and the default node pool. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth. Targets the `2026-06-30-preview` API.
+Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI + azuread) for Azure prerequisites, the HCP cluster, the default node pool, and Entra OIDC. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and applying the console secret. Targets the `2026-06-30-preview` API.
 
 **Documentation:** [https://rh-mobb.github.io/validated-pattern-aro-hcp/](https://rh-mobb.github.io/validated-pattern-aro-hcp/) — prerequisites, permissions by step, external-auth, and architecture. Local preview: `make docs-preview`.
 
@@ -19,7 +19,7 @@ make cluster.public.apply
 | Layer | Tool | Resources |
 |-------|------|-----------|
 | Prerequisites + cluster | Terraform (azurerm + azapi) | RG, NSG, VNet, subnets, Key Vault, etcd KMS key, optional `redhat-pull-secret`, 13 HCP MIs + ESO identity, RBAC, `hcpOpenShiftClusters`, default `nodePools` |
-| Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, external-auth |
+| Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, console secret / CRBs |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
 Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `NAME=np-2 bash scripts/nodepool.sh create`.
@@ -32,7 +32,7 @@ Complete **[Account prerequisites](docs/prerequisites/account.md)** before deplo
 |-------------|-------|
 | ARO HCP preview **allow-list** | Not an Azure role — subscription must be enrolled |
 | **Contributor + User Access Administrator** on customer RG | Minimum for `make cluster.<name>.apply` (Terraform writes 28 role assignments). **Owner** also works but is broader |
-| **`make cluster.<name>.external-auth` only** | Entra app registration rights — **Application Administrator not required** when users may register apps; see [External auth guide](docs/guides/external-auth-entra-id.md) |
+| **`make cluster.<name>.apply`** | Entra app registration rights (Graph) plus Azure Contributor + UAA — see [External auth guide](docs/guides/external-auth-entra-id.md) |
 | Tools | Azure CLI `>= 2.67.0`, Terraform `>= 1.9`, `jq`, `oc >= 4.20`, optional `sshuttle`, `make setup` for `az aro hcp` |
 
 Per-target permission matrix: **[Full-stack deployment](docs/prerequisites/full-stack.md#permissions-by-deployment-step)**.
@@ -79,8 +79,8 @@ Per cluster (`<name>` = directory under `clusters/`):
 |--------|-------------|
 | `make cluster.<name>.init` | Terraform init (per-cluster state) |
 | `make cluster.<name>.plan` | Terraform plan |
-| `make cluster.<name>.apply` | Terraform apply: prereqs + cluster + default node pool |
-| `make cluster.<name>.destroy` | Teardown (external-auth → state-rm last pool → terraform destroy) |
+| `make cluster.<name>.apply` | Terraform apply: prereqs + cluster + Entra OIDC + default node pool |
+| `make cluster.<name>.destroy` | Teardown (state-rm last pool → terraform destroy, including Entra app) |
 | `make cluster.<name>.kubeconfig` | Admin kubeconfig → `.kube/config` |
 | `make cluster.<name>.revoke-credentials` | Revoke admin creds |
 | `make cluster.<name>.versions` | List enabled HCP versions for `location` |
@@ -88,9 +88,9 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.jump` | Print sshuttle command (foreground) |
 | `make cluster.<name>.sshuttle.connect` | Start sshuttle in the background (`clusters/<name>/sshuttle.pid`) |
 | `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
-| `make cluster.<name>.external-auth` | Entra app + external-auth + console; binds signed-in user as `cluster-admin` unless `SKIP_RBAC_USER=1` |
+| `make cluster.<name>.external-auth` | Console secret + `cluster-admin` CRB (app already created by Terraform unless `enable_external_auth = false`) |
 | `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional). Point Argo at a [cluster-config repo](docs/guides/gitops.md#cluster-config-repo) with `GITOPS_REPO` + `GITOPS_SOURCE_ROOT=overlays`. |
-| `make cluster.<name>.external-auth-delete` | Remove external-auth |
+| `make cluster.<name>.external-auth-delete` | Remove in-cluster console secret (does not delete the Terraform Entra app) |
 
 ## Configuration
 
@@ -103,6 +103,8 @@ Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfv
 | `api_visibility` | `Public` | Create-time only: `Public` or `Private`. |
 | `ingress_visibility` | `Public` | Create-time only: `Public`, `Private`, or `Disabled`. Console / `*.apps`. |
 | `enable_jumpbox` | `false` | When `true`, Terraform creates the Fedora jump VM. |
+| `enable_external_auth` | `true` | Entra app + `externalAuths/entra` after cluster DNS is known. |
+| `oidc_web_redirects` | `{ rhoai = { host = "rh-ai", path = "/oauth2/callback" } }` | Extra Web callbacks. Console, GitOps, and PKCE are always registered. Set `{}` for none. |
 | `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
 | `pull_secret_path` | (empty) | Optional. Example profiles set `../tmp/pull-secret.txt` (gitignored). When set, Terraform writes Key Vault `redhat-pull-secret`. `PULL_SECRET_PATH` still overrides via Make. Never commit the file. |
 
@@ -154,7 +156,7 @@ Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet sco
 | Credential POST 404 | Cluster not ready | Wait for `provisioningState: Succeeded` |
 | Admin kubeconfig fails | CLI issue | `credentials.sh` falls back to REST async flow |
 | Credential expired | 24h TTL | `make cluster.<name>.kubeconfig` again |
-| `az ad app create` / `credential reset` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [Entra permissions](docs/guides/external-auth-entra-id.md#directory-roles-least-privilege) |
+| `az ad app create` / Terraform `azuread_application` Insufficient privileges | Tenant disables user app registration | Application Developer or Cloud Application Administrator, **or** have an admin create the app and add you as owner. Not the same as Azure Owner. See [Entra permissions](docs/guides/external-auth-entra-id.md#directory-roles-least-privilege) |
 | AADSTS65001 consent error | User consent disabled | Admin consent for Azure CLI Graph scopes and/or the OIDC app |
 | Console "Application is not available" / 503 / degraded `console` CO | No external-auth (console OAuth secret missing) | `make cluster.<name>.external-auth` |
 | GitOps CSV never Succeeded | Channel not in catalog for this OCP version | Bump `gitops/bootstrap/subscription.yaml` `channel` to the current `gitops-1.x` (see [GitOps guide](docs/guides/gitops.md)) |
@@ -163,7 +165,7 @@ Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet sco
 | Compliance Operator CSV stuck Installing; pod Pending `didn't match Pod's node affinity/selector` | CSV selects `node-role.kubernetes.io/master` (no masters on HCP) | Subscription `spec.config` in `gitops/operators/compliance/subscription.yaml` pins workers + `PLATFORM=HyperShift`; re-bootstrap or let Argo sync |
 | GitOps “Log in via OpenShift” / Dex connection refused | HCP has no in-cluster OAuth; default Dex `openShiftOAuth` is invalid | `make cluster.<name>.external-auth` then `make cluster.<name>.bootstrap` — login is Entra, not OpenShift |
 | GitOps `/auth/callback` blank (`named cookie not present`) | OAuth state cookie missing (embedded browser) **or** server still using Dex after SSO switch | Login in Chrome/Safari/Firefox; bootstrap restarts `openshift-gitops-server` after the OIDC patch |
-| `oc login --exec-plugin=oc-oidc` AADSTS7000218 (`client_secret` required) | Entra app is confidential-only; CLI is public PKCE | Re-run external-auth (enables public client flows + `http://localhost`); do not pass `--client-secret` |
+| `oc login --exec-plugin=oc-oidc` AADSTS7000218 (`client_secret` required) | Entra app is confidential-only; CLI is public PKCE | Re-apply so Terraform sets public-client `http://localhost`; do not pass `--client-secret` |
 | GitOps sync: cannot patch `external-secrets-sa` | Default GitOps controller has no ServiceAccount patch; selfHeal fights Job/OpenShift annotations | Re-bootstrap (Application `ignoreDifferences` + `RespectIgnoreDifferences`). Do not grant the controller SA patch. |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |

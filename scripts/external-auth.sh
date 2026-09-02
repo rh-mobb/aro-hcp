@@ -116,6 +116,22 @@ create_console_secret() {
     --dry-run=client -o yaml | oc apply -f -
 }
 
+load_console_secret_from_key_vault() {
+  local kv_name secret_name
+  kv_name="$(resolve_tf key_vault_name || true)"
+  secret_name="$(resolve_tf entra_client_secret_name || true)"
+  [[ -n "${kv_name}" && "${kv_name}" != "null" ]] || die "key_vault_name terraform output is required to read the Entra client secret"
+  [[ -n "${secret_name}" && "${secret_name}" != "null" ]] || die "entra_client_secret_name terraform output is required to read the Entra client secret"
+  ENTRA_APP_CRED="$(az keyvault secret show --vault-name "${kv_name}" --name "${secret_name}" --query value -o tsv)"
+  [[ -n "${ENTRA_APP_CRED}" && "${ENTRA_APP_CRED}" != "null" ]] || die "Failed to read Entra client secret from Key Vault ${kv_name}/${secret_name}"
+}
+
+terraform_managed_entra() {
+  local id=""
+  id="$(resolve_tf entra_client_id || true)"
+  [[ -n "${id}" && "${id}" != "null" ]]
+}
+
 apply_console_secret_with_retry() {
   local attempts=0
   local max_attempts=5
@@ -132,13 +148,22 @@ apply_console_secret_with_retry() {
 
 cmd_create() {
   cluster_exists || die "Cluster ${CLUSTER_NAME} does not exist"
-  local callback
-  callback="$(console_callback_url)/auth/callback"
-  log "Console callback: ${callback}"
+  TENANT_ID="$(az account show --query tenantId -o tsv)"
+  ISSUER_URL="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
 
-  create_entra_app "${callback}"
-  create_entra_credential
-  create_external_auth
+  if terraform_managed_entra; then
+    CLIENT_ID="$(resolve_tf entra_client_id)"
+    save_state
+    log "Using Terraform-managed Entra app ${CLIENT_ID} (skip app create / external-auth ARM)"
+    load_console_secret_from_key_vault
+  else
+    local callback
+    callback="$(console_callback_url)/auth/callback"
+    log "Console callback: ${callback}"
+    create_entra_app "${callback}"
+    create_entra_credential
+    create_external_auth
+  fi
 
   if [[ -f "${KUBECONFIG_PATH}" ]]; then
     apply_console_secret_with_retry
@@ -170,12 +195,16 @@ cmd_show() {
 }
 
 cmd_delete() {
-  if external_auth_exists; then
-    az aro hcp cluster external-auth delete \
-      --resource-group "${RESOURCE_GROUP}" \
-      --cluster-name "${CLUSTER_NAME}" \
-      --name "${EXTERNAL_AUTH_NAME}" \
-      -y
+  if terraform_managed_entra; then
+    log "Terraform owns externalAuths/entra and the Entra app; skipping ARM and app delete"
+  else
+    if external_auth_exists; then
+      az aro hcp cluster external-auth delete \
+        --resource-group "${RESOURCE_GROUP}" \
+        --cluster-name "${CLUSTER_NAME}" \
+        --name "${EXTERNAL_AUTH_NAME}" \
+        -y
+    fi
   fi
 
   if [[ -f "${KUBECONFIG_PATH}" ]] && command -v oc >/dev/null 2>&1; then
@@ -186,7 +215,11 @@ cmd_delete() {
   fi
 
   if load_state && [[ -n "${CLIENT_ID:-}" ]]; then
-    az ad app delete --id "${CLIENT_ID}" || true
+    if terraform_managed_entra; then
+      log "Terraform owns Entra app ${CLIENT_ID}; not deleting it (terraform destroy will)"
+    else
+      az ad app delete --id "${CLIENT_ID}" || true
+    fi
     rm -f "${STATE_FILE}"
   fi
   log "External auth cleanup complete"
@@ -242,7 +275,11 @@ EOF
 
 cmd_login() {
   require_cmd oc
-  load_state || die "Run external-auth create first"
+  if terraform_managed_entra; then
+    CLIENT_ID="$(resolve_tf entra_client_id)"
+  else
+    load_state || die "Run external-auth create first"
+  fi
   local api_url
   api_url="$(az aro hcp cluster show \
     --resource-group "${RESOURCE_GROUP}" \
@@ -265,8 +302,14 @@ main() {
   case "${cmd}" in
     create) cmd_create ;;
     console-secret)
-      load_state || die "Run external-auth create first"
-      create_entra_credential
+      if terraform_managed_entra; then
+        CLIENT_ID="$(resolve_tf entra_client_id)"
+        save_state
+        load_console_secret_from_key_vault
+      else
+        load_state || die "Run external-auth create first"
+        create_entra_credential
+      fi
       apply_console_secret_with_retry
       unset ENTRA_APP_CRED
       ;;

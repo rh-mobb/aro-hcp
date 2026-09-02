@@ -258,3 +258,27 @@ variable "pull_secret_key_vault_secret_name" {
     error_message = "pull_secret_key_vault_secret_name must be 1-127 alphanumeric characters or hyphens."
   }
 }
+
+variable "enable_external_auth" {
+  description = "Create the Entra OIDC app, Key Vault client secret, and HCP externalAuths child. Console secret and cluster-admin CRBs still need make cluster.<name>.external-auth after kubeconfig."
+  type        = bool
+  default     = true
+}
+
+variable "oidc_web_redirects" {
+  description = <<-EOT
+    Extra Entra Web redirect URIs (host + path) joined to apps.aro.<dns>.
+    Console, GitOps, and PKCE http://localhost are always registered.
+    Default includes RHOAI rh-ai /oauth2/callback. Set {} for none.
+  EOT
+  type = map(object({
+    host = string
+    path = string
+  }))
+  default = {
+    rhoai = {
+      host = "rh-ai"
+      path = "/oauth2/callback"
+    }
+  }
+}

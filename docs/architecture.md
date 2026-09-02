@@ -114,9 +114,9 @@ flowchart TB
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
 | `make setup` | `scripts/setup.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
-| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` | Customer RG, network, Key Vault, etcd key, optional `redhat-pull-secret`, 13 HCP identities, ESO workload identity + federated credential, 28 operator role assignments + Key Vault Secrets User for ESO, `hcpOpenShiftClusters`, default `nodePools/np-1`. |
+| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` + `azuread` | Customer RG, network, Key Vault, etcd key, optional `redhat-pull-secret`, 13 HCP identities, ESO workload identity + federated credential, 28 operator role assignments + Key Vault Secrets User for ESO, `hcpOpenShiftClusters`, default `nodePools/np-1`, Entra app + `externalAuths/entra` + Key Vault client secret (unless `enable_external_auth = false`). |
 | `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
-| `make cluster.<name>.external-auth` | Entra + `az aro hcp cluster external-auth` | Entra app, `externalAuths/entra`, console client secret in the cluster. |
+| `make cluster.<name>.external-auth` | `oc` + optional Entra fallback | Console secret in `openshift-config`, break-glass `cluster-admin` CRB, GitOps OIDC patch. When Terraform already created the app, does **not** create or rotate Entra. |
 | `make cluster.<name>.bootstrap` | `oc apply -k` + Argo `Application` | OpenShift GitOps, Web Terminal, Compliance Operator, External Secrets Operator; ConfigMap `openshift-gitops/aro-platform-metadata` (ESO client ID + vault URI from Terraform outputs); `kube-system/additional-pull-secret` from Key Vault `redhat-pull-secret` (or `PULL_SECRET_PATH`); root app syncs [`gitops/overlays/public`](../gitops/overlays/public/) or [`private`](../gitops/overlays/private/) (from `api_visibility`, or `GITOPS_OVERLAY`). |
 
 `make cluster.<name>.plan` / `apply` / `destroy` pass `clusters/<name>/terraform.tfvars` with `-var-file`. Scripts after apply read terraform outputs, then fall back to the same file.
@@ -707,22 +707,18 @@ flowchart TB
         cred --> kube
     end
 
-    subgraph optional["make external-auth"]
-        app["Entra app registration"]
-        sp["Enterprise application / service principal"]
-        ext["externalAuths/entra on the cluster"]
+    subgraph optional["make external-auth (after kubeconfig)"]
         secret["Secret entra-console-openshift-console in openshift-config"]
-        app --> sp
-        app --> ext
-        app --> secret
+        crb["entra-cluster-admin CRB"]
     end
 
-    kube -.-> secret
+    kube --> secret
+    kube --> crb
 
     classDef req fill:#c5f6fa,stroke:#0c8599,color:#000
     classDef opt fill:#fff4e6,stroke:#e67700,color:#000
     class cred,kube req
-    class app,sp,ext,secret opt
+    class secret,crb opt
 ```
 
 ### Admin kubeconfig
@@ -731,24 +727,24 @@ flowchart TB
 
 ### External authentication
 
-`make cluster.<name>.external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
+Terraform (`modules/entra`, after the cluster resource) creates the Entra app, service principal, confidential client secret in Key Vault, and `externalAuths/entra`. The deploying identity is set as **app and service-principal owner**. Microsoft Graph can otherwise create an app with **no owners**, after which `Application.ReadWrite.OwnedBy` cannot add a client secret, create the enterprise app, or delete the registration.
 
-1. Reads `properties.console.url` and **merges** redirect URIs: `<console>/auth/callback`, `http://localhost:8000`, and `<gitops-server>/auth/callback` when the GitOps route exists (so a re-run does not drop GitOps SSO). Enables Entra **public client flows** and native `http://localhost` so `oc-oidc` PKCE works on a random localhost port (AADSTS7000218 otherwise).
-2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${cluster_name}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
-3. Sets optional claims for `groups` on id/access/SAML tokens and `groupMembershipClaims=SecurityGroup` so GitOps group `ClusterRoleBinding`s can match token object IDs.
-4. Rotates a client secret.
-5. Creates `az aro hcp cluster external-auth` named `EXTERNAL_AUTH_NAME` (default `entra`) with:
-   - issuer `https://login.microsoftonline.com/<tenant>/v2.0`
-   - audience = app client ID
-   - username claim `preferred_username`, `NoPrefix`
-   - groups claim
-   - confidential console client + public CLI client
-6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret). If Argo CD is already installed, copies that secret into `openshift-gitops/argocd-secret` (`oidc.entra` credential key) and patches `ArgoCD/openshift-gitops`: remove `spec.sso` (Dex OpenShift OAuth), set `spec.oidcConfig` to the Entra issuer. Does **not** rotate the Entra secret again (that would break the console).
-7. Binds the signed-in Entra user as OpenShift `cluster-admin` (`ClusterRoleBinding` `entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. If `GROUP_ID` is set, also binds that group (`entra-cluster-admin-group`). Fleet group admins belong in a cluster-config GitOps overlay, not this installer.
+Redirect URIs are built from cluster DNS:
 
-Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make cluster.<name>.external-auth`.
+- **Always:** console `/auth/callback`, GitOps `/auth/callback`, Web `http://localhost:8000`, public-client `http://localhost` (PKCE)
+- **Optional** `oidc_web_redirects` (default includes RHOAI `rh-ai` + `/oauth2/callback`). Set `{}` for none.
 
-Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Create runs `rbac-user` unless `SKIP_RBAC_USER=1` (and `rbac-group` when `GROUP_ID` is set). Those create in-cluster `ClusterRoleBinding` objects, not Azure RBAC.
+`make cluster.<name>.external-auth` (after kubeconfig) does **not** create or rotate the app when Terraform already owns it. It:
+
+1. Reads the client secret from Key Vault and applies `openshift-config` secret `entra-console-openshift-console`.
+2. If Argo CD is already installed, copies that secret into `openshift-gitops/argocd-secret` and patches `ArgoCD/openshift-gitops` for Entra OIDC (no Dex).
+3. Binds the signed-in Entra user as OpenShift `cluster-admin` (`entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. `GROUP_ID=` still applies `entra-cluster-admin-group`. Fleet group admins belong in a cluster-config GitOps overlay.
+
+If `enable_external_auth = false`, the script falls back to creating the Entra app and ARM child as before.
+
+Without the console secret, ClusterOperator `console` is typically degraded (HTTP 503 / “Application is not available”). Run kubeconfig then `make cluster.<name>.external-auth`.
+
+Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`.
 
 ## GitOps (optional)
 
@@ -786,20 +782,15 @@ flowchart LR
 ```mermaid
 sequenceDiagram
     participant Op as Operator
-    participant Az as Azure CLI
+    participant TF as Terraform
     participant Entra as Microsoft Entra ID
     participant Cluster as HCP cluster
     participant OC as oc
 
-    Op->>Az: cluster show console.url
-    Op->>Entra: app create / update redirect URIs
-    Entra-->>Op: CLIENT_ID
-    Op->>Entra: credential reset
-    Entra-->>Op: app credential
-    Op->>Az: external-auth create
-    Az->>Cluster: PUT externalAuths/entra
-    Op->>OC: apply console client secret
-    OC->>Cluster: secret in openshift-config
+    Op->>TF: terraform apply (cluster then entra module)
+    TF->>Entra: app + secret + redirect URIs
+    TF->>Cluster: PUT externalAuths/entra
+    Op->>OC: kubeconfig then apply console secret from Key Vault
 ```
 
 ## Lifecycle
@@ -820,21 +811,21 @@ stateDiagram-v2
 
 `make cluster.<name>.destroy` order:
 
-1. `external-auth.sh delete` — external-auth resource, console secret, Entra app (best-effort)
-2. `terraform state rm azapi_resource.node_pool` — OCPBUGS-86702: RP rejects DELETE of the last node pool
-3. `terraform destroy` — cluster ARM delete cascades remaining pools and the managed RG, then customer RG contents (identities, KV, network)
+1. `terraform state rm` default node pool — OCPBUGS-86702: RP rejects DELETE of the last pool
+2. `terraform destroy` — Entra app + `externalAuths/entra` (when Terraform owns them), cluster ARM delete (cascades remaining pools and the managed RG), then customer RG contents
 
-When OCPBUGS-86702 is fixed and the frontend admission 409 is removed, step 2 can be dropped.
+`external-auth-delete` only removes the in-cluster console secret when Terraform owns Entra. Do not `az ad app delete` a Terraform-managed app by hand.
+
+When OCPBUGS-86702 is fixed and the frontend admission 409 is removed, step 1 can be dropped.
 
 Do not `terraform destroy` the customer RG while the cluster still exists in Azure; that fails or orphans the managed RG. Plain `terraform destroy` without the state-rm also 409s on the last pool.
 
 ```mermaid
 flowchart TB
-    ea["Delete external-auth + Entra app"] --> rm["state rm default node pool"]
-    rm --> tf["terraform destroy — cluster then customer RG"]
+    rm["state rm default node pool"] --> tf["terraform destroy — entra, cluster, customer RG"]
 
     classDef step fill:#ffe3e3,stroke:#c92a2a,color:#000
-    class ea,rm,tf step
+    class rm,tf step
 ```
 
 ## Ownership matrix
@@ -847,9 +838,9 @@ flowchart TB
 | Managed RG contents | Resource provider / HyperShift | Cluster delete | No (deny assignment) |
 | Hosted control plane | ARO HCP service | Cluster delete | No |
 | Admin kubeconfig | Credential API | Expires (24h) or `revoke-credentials` | Local file only |
-| Entra app + secret | `external-auth.sh` | `external-auth.sh delete` | Yes; lives in the tenant, not the RG |
-| `externalAuths/entra` | `az aro hcp` | `external-auth.sh delete` | Via CLI |
-| Console secret in `openshift-config` | `oc apply` | `oc delete` / external-auth delete | Yes, in-cluster |
+| Entra app + Key Vault client secret | Terraform `modules/entra` | `terraform destroy` | Yes; lives in the tenant + customer KV |
+| `externalAuths/entra` | Terraform AzAPI | `terraform destroy` | Via TF |
+| Console secret in `openshift-config` | `oc apply` (`external-auth.sh`) | `oc delete` / cluster delete | Yes, in-cluster |
 | GitOps / Web Terminal / Compliance / ESO Subscriptions | `cluster.<name>.bootstrap` then Argo | Delete Subscriptions / uninstall from console; not Terraform | Yes, in-cluster |
 | `openshift-gitops/aro-platform-metadata` | bootstrap from Terraform outputs | `oc delete`; overwritten on next bootstrap | Yes, in-cluster |
 | GitOps Entra OIDC (`ArgoCD` `oidcConfig` + `argocd-secret` key) | bootstrap or external-auth when both exist | Next bootstrap / external-auth overwrite; Entra app delete breaks login | Yes, in-cluster; secret copied from console secret |
@@ -862,6 +853,7 @@ flowchart TB
 | [`terraform/`](../terraform/) | Thin root: module composition + optional jumpbox |
 | [`modules/network/`](../modules/network/) | RG, VNet, NSG, subnets |
 | [`modules/identities/`](../modules/identities/) | Key Vault, etcd key, optional pull-secret KV secret, 13 HCP MIs + ESO identity, RBAC |
+| [`modules/entra/`](../modules/entra/) | Entra app, redirect URI catalog, KV client secret, `externalAuths/entra` |
 | [`modules/cluster/`](../modules/cluster/) | AzAPI `hcpOpenShiftClusters` + default `nodePools` |
 | [`modules/jumpbox/`](../modules/jumpbox/) | Optional Fedora jump VM |
 | [`hack/versions/`](../hack/versions/) | Tiny Terraform root for `make cluster.<name>.versions` |

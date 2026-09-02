@@ -109,6 +109,36 @@ output "console_url" {
   value       = module.cluster.console_url
 }
 
+output "dns_base_domain" {
+  description = "Service-assigned HCP DNS zone (properties.dns.baseDomain)."
+  value       = module.cluster.dns_base_domain
+}
+
+output "dns_base_domain_prefix" {
+  description = "DNS label for the cluster (properties.dns.baseDomainPrefix)."
+  value       = module.cluster.dns_base_domain_prefix
+}
+
+output "entra_client_id" {
+  description = "Entra application (client) ID when enable_external_auth is true."
+  value       = var.enable_external_auth ? module.entra[0].client_id : null
+}
+
+output "entra_issuer_url" {
+  description = "OIDC issuer URL when enable_external_auth is true."
+  value       = var.enable_external_auth ? module.entra[0].issuer_url : null
+}
+
+output "entra_client_secret_name" {
+  description = "Key Vault secret name for the Entra confidential client secret. Value is never exported."
+  value       = var.enable_external_auth ? module.entra[0].client_secret_key_vault_secret_name : null
+}
+
+output "entra_web_redirect_uris" {
+  description = "Web redirect URIs Terraform registers on the Entra app."
+  value       = var.enable_external_auth ? module.entra[0].web_redirect_uris : []
+}
+
 output "cluster_version" {
   value = var.cluster_version
 }
