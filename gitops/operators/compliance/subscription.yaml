@@ -9,3 +9,12 @@ spec:
   name: compliance-operator
   source: redhat-operators
   sourceNamespace: openshift-marketplace
+  # HCP has no master nodes. CSV defaults to node-role.kubernetes.io/master;
+  # OLM Subscription spec.config.nodeSelector replaces that (does not merge).
+  # PLATFORM=HyperShift matches the hosted-control-plane install path.
+  config:
+    nodeSelector:
+      node-role.kubernetes.io/worker: ""
+    env:
+      - name: PLATFORM
+        value: HyperShift

@@ -10,7 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/rh-mobb/aro-hcp.git
+    repoURL: https://github.com/rh-mobb/validated-pattern-aro-hcp.git
     targetRevision: main
     path: gitops/overlays/public
   destination:

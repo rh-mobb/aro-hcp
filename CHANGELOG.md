@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `GITOPS_SOURCE_ROOT` so Argo can sync a cluster-config repo (`overlays/public|private`) that Kustomize-includes this installer’s `gitops/` as a remote base ([`validated-pattern-aro-hcp-cluster-config`](https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config))
+- `SKIP_RBAC_USER=1` on `make cluster.<name>.external-auth` to skip the signed-in user `entra-cluster-admin` binding when a GitOps group binding already covers the operator
+- Example `pull_secret_path = "../tmp/pull-secret.txt"` on public/private tfvars (file gitignored)
 - `make cluster.<name>.bootstrap` — OpenShift GitOps (`gitops-1.19`), Web Terminal, Compliance Operator, and Red Hat External Secrets Operator from [`gitops/`](gitops/)
 - Optional `pull_secret_path` / `PULL_SECRET_PATH` uploads Red Hat dockerconfigjson to Key Vault `redhat-pull-secret`; bootstrap plants `kube-system/additional-pull-secret` for OperatorHub (do not patch `openshift-config/pull-secret`)
 - ESO workload identity `${cluster_name}-eso` (not one of the 13 HCP operators) with Key Vault Secrets User and a federated credential on the cluster OIDC issuer; bootstrap publishes `openshift-gitops/aro-platform-metadata` so GitOps can annotate the ServiceAccount without putting per-cluster IDs in git
@@ -23,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `hack/versions` — plan-time OpenShift version validation per region
 
 ### Changed
+- GitHub / Pages URLs to [`rh-mobb/validated-pattern-aro-hcp`](https://github.com/rh-mobb/validated-pattern-aro-hcp) (`https://rh-mobb.github.io/validated-pattern-aro-hcp/`)
+- `make cluster.<name>.external-auth` always sets Entra `groupMembershipClaims=SecurityGroup` so GitOps group `ClusterRoleBinding`s match token object IDs; fleet admins belong in the cluster-config repo, not this installer’s `gitops/`
+- Compliance Operator `Subscription` selects `node-role.kubernetes.io/worker` and `PLATFORM=HyperShift` (HCP has no masters)
 - Identity inventory is 13 HCP operators plus one ESO workload identity; architecture, full-stack permissions, and README document GitOps bootstrap and Key Vault Secrets User for the GitOps operator
 - MkDocs theme: use Material `default` / `slate` palettes (match ROSA validated-pattern docs) instead of custom RHDS token overrides
 - `make bootstrap` renamed to `make setup` (`scripts/setup.sh`); `make bootstrap` remains as a deprecated alias
@@ -36,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `config/cluster.env.example` and monolithic `terraform/*.tf` resources (replaced by modules + per-cluster tfvars)
 
 ### Fixed
+- `oc login --exec-plugin=oc-oidc` AADSTS7000218: Entra public-client flows + native `http://localhost` so PKCE works without `--client-secret`
 - `make cluster.<profile>.kubeconfig` failed with “Cluster public does not exist” when GNU Make exported `CLUSTER_NAME` from the profile name
 - `make cluster.<profile>.destroy` skipped node-pool state-rm when `TF_DATA_DIR` pointed at the wrong cluster
 - GitOps `cluster-config` selfHeal no longer patches ESO ServiceAccounts (OpenShift dockercfg + workload-identity annotations); Role `argocd-eso-hooks` lets the default controller create the metadata Sync Job

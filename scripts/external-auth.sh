@@ -13,12 +13,12 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <create|show|delete|login|rbac-user|rbac-group>
 
-create  - Entra app + external-auth + console secret
+create  - Entra app + external-auth + console secret + cluster-admin for signed-in user (SKIP_RBAC_USER=1 to skip)
 show    - Show external-auth configuration
 delete  - Remove external-auth, console secret, Entra app
 login   - oc login via oc-oidc exec plugin
-rbac-user  - ClusterRoleBinding for current Entra user (email)
-rbac-group - ClusterRoleBinding for Entra group (GROUP_ID= required)
+rbac-user  - ClusterRoleBinding for current Entra user (email); also run from create unless SKIP_RBAC_USER=1
+rbac-group - ClusterRoleBinding for Entra group (GROUP_ID= required); also run from create when GROUP_ID is set
 EOF
 }
 
@@ -74,6 +74,9 @@ create_entra_app() {
 JSON
   az ad app update --id "${CLIENT_ID}" --optional-claims "@${manifest}"
   rm -f "${manifest}"
+  # GitOps cluster-admin Group bindings match object IDs in the token. Without
+  # this, optional claims.groups is empty and those CRBs never match.
+  az ad app update --id "${CLIENT_ID}" --set groupMembershipClaims=SecurityGroup
 }
 
 create_entra_credential() {
@@ -140,9 +143,18 @@ cmd_create() {
   if [[ -f "${KUBECONFIG_PATH}" ]]; then
     apply_console_secret_with_retry
     configure_gitops_oidc
+    if [[ -n "${SKIP_RBAC_USER:-}" ]]; then
+      log "SKIP_RBAC_USER set; not binding signed-in Entra user as cluster-admin"
+    else
+      cmd_rbac_user
+    fi
+    if [[ -n "${GROUP_ID:-}" ]]; then
+      cmd_rbac_group
+    fi
   else
-    log "WARN: KUBECONFIG not found at ${KUBECONFIG_PATH}; run make cluster.<name>.kubeconfig then re-run secret step"
+    log "WARN: KUBECONFIG not found at ${KUBECONFIG_PATH}; run make cluster.${CLUSTER:-<profile>}.kubeconfig then re-run secret step"
     log "Or: oc create secret generic ${EXTERNAL_AUTH_NAME}-console-openshift-console -n openshift-config --from-literal=client""Secret=<value>"
+    log "WARN: skip OpenShift cluster-admin binding (needs kubeconfig). After kubeconfig: bash scripts/external-auth.sh rbac-user"
   fi
 
   log "External auth created. Clear ENTRA_APP_CRED from shell: unset ENTRA_APP_CRED"
@@ -185,6 +197,8 @@ cmd_rbac_user() {
   export KUBECONFIG="${KUBECONFIG_PATH}"
   local email
   email="$(az ad signed-in-user show --query userPrincipalName -o tsv)"
+  [[ -n "${email}" && "${email}" != "null" ]] || die "Could not read Entra UPN (az ad signed-in-user show)"
+  log "Binding Entra user ${email} as OpenShift cluster-admin (entra-cluster-admin)"
   oc apply -f - <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -209,11 +223,12 @@ cmd_rbac_group() {
   if [[ -n "${CLIENT_ID:-}" ]]; then
     az ad app update --id "${CLIENT_ID}" --set groupMembershipClaims=SecurityGroup 2>/dev/null || true
   fi
+  log "Binding Entra group ${GROUP_ID} as OpenShift cluster-admin (entra-cluster-admin-group)"
   oc apply -f - <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: entra-cluster-admin
+  name: entra-cluster-admin-group
 subjects:
   - kind: Group
     apiGroup: rbac.authorization.k8s.io
@@ -227,7 +242,6 @@ EOF
 
 cmd_login() {
   require_cmd oc
-  require_cmd jq
   load_state || die "Run external-auth create first"
   local api_url
   api_url="$(az aro hcp cluster show \
@@ -237,20 +251,11 @@ cmd_login() {
   TENANT_ID="$(az account show --query tenantId -o tsv)"
   ISSUER_URL="https://login.microsoftonline.com/${TENANT_ID}/v2.0"
 
-  if [[ -n "${ENTRA_APP_CRED:-}" ]]; then
-    local oc_cred_flag="--client-""secret"
-    oc login "${api_url}" \
-      --exec-plugin=oc-oidc \
-      --client-id="${CLIENT_ID}" \
-      "${oc_cred_flag}=${ENTRA_APP_CRED}" \
-      --issuer-url="${ISSUER_URL}" \
-      --extra-scopes=profile
-  else
-    local jwt_field="access""Token"
-    AZ_ACCESS_JWT="$(az account get-access-token --resource "${CLIENT_ID}" -o json | jq -r --arg f "${jwt_field}" '.[$f]')"
-    local oc_token_flag="--token"
-    oc login --server="${api_url}" "${oc_token_flag}=${AZ_ACCESS_JWT}"
-  fi
+  oc login "${api_url}" \
+    --exec-plugin=oc-oidc \
+    --client-id="${CLIENT_ID}" \
+    --issuer-url="${ISSUER_URL}" \
+    --extra-scopes=profile
 }
 
 main() {

@@ -7,8 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
 
 GITOPS_DIR="${ROOT_DIR}/gitops"
-GITOPS_REPO="${GITOPS_REPO:-https://github.com/rh-mobb/aro-hcp.git}"
+GITOPS_REPO="${GITOPS_REPO:-https://github.com/rh-mobb/validated-pattern-aro-hcp.git}"
 GITOPS_REVISION="${GITOPS_REVISION:-main}"
+# Argo Application path prefix. Default matches this repo. A cluster-config
+# repo (e.g. validated-pattern-aro-hcp-cluster-config) uses overlays/public|private.
+GITOPS_SOURCE_ROOT="${GITOPS_SOURCE_ROOT:-gitops/overlays}"
 GITOPS_WAIT_SECONDS="${GITOPS_WAIT_SECONDS:-900}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/.kube/config}"
 
@@ -43,10 +46,15 @@ kustomize_build() {
   fi
 }
 
+overlay_git_path() {
+  local overlay="${1:?overlay name required}"
+  printf '%s/%s\n' "${GITOPS_SOURCE_ROOT}" "${overlay}"
+}
+
 render_root_application() {
   local overlay="$1"
   local src="${GITOPS_DIR}/argocd/root-application.yaml"
-  awk -v repo="${GITOPS_REPO}" -v rev="${GITOPS_REVISION}" -v gpath="gitops/overlays/${overlay}" '
+  awk -v repo="${GITOPS_REPO}" -v rev="${GITOPS_REVISION}" -v gpath="$(overlay_git_path "${overlay}")" '
     $1 == "repoURL:" { printf "    repoURL: %s\n", repo; next }
     $1 == "targetRevision:" { printf "    targetRevision: %s\n", rev; next }
     $1 == "path:" { printf "    path: %s\n", gpath; next }
@@ -268,12 +276,12 @@ cmd_bootstrap() {
   log "Applying overlay gitops/overlays/${overlay}"
   oc apply -k "${overlay_dir}"
 
-  log "Planting root Application (repo=${GITOPS_REPO} revision=${GITOPS_REVISION} path=gitops/overlays/${overlay})"
+  log "Planting root Application (repo=${GITOPS_REPO} revision=${GITOPS_REVISION} path=$(overlay_git_path "${overlay}"))"
   render_root_application "${overlay}" | oc apply -f -
 
   configure_gitops_oidc
 
-  log "GitOps bootstrap complete. Argo CD syncs gitops/overlays/${overlay} (prune=false)."
+  log "GitOps bootstrap complete. Argo CD syncs $(overlay_git_path "${overlay}") (prune=false)."
   log "Do not install these operators again from Software Catalog (Classic would fight this Subscription)."
 }
 
@@ -286,8 +294,9 @@ Install OpenShift GitOps, apply gitops/overlays/<profile>, plant the root Argo A
 Environment:
   CLUSTER              Profile directory under clusters/ (may not match an overlay name)
   GITOPS_OVERLAY       Overlay directory (public, private, or a custom overlay)
-  GITOPS_REPO          Git URL (default: https://github.com/rh-mobb/aro-hcp.git)
+  GITOPS_REPO          Git URL (default: https://github.com/rh-mobb/validated-pattern-aro-hcp.git)
   GITOPS_REVISION      Branch/tag/commit (default: main)
+  GITOPS_SOURCE_ROOT   Argo path prefix (default: gitops/overlays). Use overlays for validated-pattern-aro-hcp-cluster-config.
   GITOPS_DRY_RUN=1     Print kustomize, platform-metadata ConfigMap, Application YAML, and Entra oidcConfig; do not talk to the cluster
   KUBECONFIG_PATH      Default: .kube/config
   PULL_SECRET_PATH     dockerconfigjson file → kube-system/additional-pull-secret (overrides Key Vault)

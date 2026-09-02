@@ -9,8 +9,9 @@ Same Make shape as ROSA validated-pattern (`cluster.<name>.bootstrap`). Repo-roo
 After the cluster is `Succeeded` and you have admin kubeconfig:
 
 ```bash
-# First apply (or later rotate): upload dockerconfigjson to the customer Key Vault
-PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply
+# Example profiles set pull_secret_path = "../tmp/pull-secret.txt" (copy dockerconfigjson there).
+# Override with PULL_SECRET_PATH=... if needed; Make exports TF_VAR_pull_secret_path.
+make cluster.<name>.apply
 
 make cluster.<name>.kubeconfig
 make cluster.<name>.bootstrap
@@ -35,7 +36,11 @@ OLM **Classic** `Subscription`s (`installPlanApproval: Automatic`). Channels are
 | Compliance Operator | `openshift-compliance` | `stable` |
 | External Secrets Operator | `external-secrets-operator` | `stable-v1` |
 
+HCP has no master nodes. The Compliance Operator CSV still selects `node-role.kubernetes.io/master`. The Subscription sets `spec.config.nodeSelector` to `node-role.kubernetes.io/worker` (OLM **replaces** the CSV selector) and `PLATFORM=HyperShift`, matching the hosted-control-plane install path. Direct Deployment patches are reverted on the next OLM reconcile.
+
 The GitOps operator creates the default Argo CD instance in `openshift-gitops`. Bootstrap patches **that** CR for Entra OIDC when external-auth already ran (it does not install a second instance). It also publishes ConfigMap `aro-platform-metadata` in that namespace (Terraform outputs: ESO client ID, tenant, Key Vault URI) and plants a root `Application` (`cluster-config`) that syncs `gitops/overlays/public` or `gitops/overlays/private`. Copying `clusters/public` to `clusters/my-cluster` does not need a matching overlay directory: bootstrap uses `api_visibility` (or `GITOPS_OVERLAY`). Sync policy is automated with **`prune: false`** so Argo cannot uninstall the GitOps operator. The Application **ignores ServiceAccount annotation / pull-secret drift** (`RespectIgnoreDifferences`): the default GitOps controller cannot patch ServiceAccounts, and the metadata Job plus OpenShift mutate those fields after create.
+
+Fleet (tenant-specific) desired state — Entra group `cluster-admin`, extra apps — belongs in a **cluster-config repo**, not in this installer. Point Argo at that repo with `GITOPS_REPO` + `GITOPS_SOURCE_ROOT=overlays` (see [Cluster-config repo](#cluster-config-repo)). The signed-in deployer is still bound as OpenShift `cluster-admin` by `make cluster.<name>.external-auth` unless `SKIP_RBAC_USER=1`. GitOps **login** admins are patched on the Argo CD CR at bootstrap (same signed-in UPN), not from overlay YAML.
 
 Terraform creates the ESO user-assigned identity and federated credential (trust pinned to `system:serviceaccount:external-secrets-operator:external-secrets-sa` before that account exists). GitOps creates the ServiceAccount without annotations. A Sync Job reads the ConfigMap, stamps `azure.workload.identity/client-id`, and applies `ClusterSecretStore` / `ExternalSecret` because the vault URL is random per cluster and must not live in committed overlays. The default GitOps controller cannot patch ServiceAccounts or create Jobs; the root Application ignores SA drift, and a Role in `external-secrets-operator` lets the controller run the Sync hook.
 
@@ -51,8 +56,9 @@ make cluster.<name>.bootstrap
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `GITOPS_REPO` | `https://github.com/rh-mobb/aro-hcp.git` | Argo `repoURL` |
+| `GITOPS_REPO` | `https://github.com/rh-mobb/validated-pattern-aro-hcp.git` | Argo `repoURL` |
 | `GITOPS_REVISION` | `main` | Branch, tag, or commit |
+| `GITOPS_SOURCE_ROOT` | `gitops/overlays` | Argo Application path prefix. Use `overlays` with a [cluster-config repo](#cluster-config-repo). |
 | `GITOPS_OVERLAY` | unset | Overlay directory (`public`, `private`, or custom). If unset: `gitops/overlays/<profile>` when that directory exists, otherwise `public` or `private` from `api_visibility`. |
 | `GITOPS_DRY_RUN=1` | unset | Print manifests; do not talk to the cluster |
 | `KUBECONFIG_PATH` | `.kube/config` | Admin kubeconfig from `make cluster.<name>.kubeconfig` |
@@ -61,11 +67,35 @@ make cluster.<name>.bootstrap
 Feature-branch test (until `gitops/` is on `main`):
 
 ```bash
-GITOPS_REPO=https://github.com/<you>/aro-hcp.git GITOPS_REVISION=feat/gitops \
+GITOPS_REPO=https://github.com/<you>/validated-pattern-aro-hcp.git GITOPS_REVISION=feat/gitops \
   make cluster.<name>.bootstrap
 ```
 
 The root Application is **not** in the Kustomize overlay so a branch override is not reverted to `main` on the first sync. Changing repo/revision later is another bootstrap (or `oc apply` of the Application). Subscriptions **are** in git and Argo-owned.
+
+## Cluster-config repo
+
+This repository’s `gitops/` tree is the **tenant-neutral** operator baseline. Org policy (who is OpenShift `cluster-admin`, extra Applications) lives in a separate Git repo that Kustomize-includes the baseline as a remote base.
+
+Example overlay (MOBB / Red Hat Zero): [`validated-pattern-aro-hcp-cluster-config`](https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config). Local checkout: `references/validated-pattern-aro-hcp-cluster-config` (gitignored).
+
+```bash
+GITOPS_REPO=https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config.git \
+GITOPS_SOURCE_ROOT=overlays \
+  make cluster.<name>.bootstrap
+```
+
+Argo then syncs `overlays/public` or `overlays/private` in that repo. Each overlay pulls `github.com/rh-mobb/validated-pattern-aro-hcp//gitops/overlays/<name>?ref=main` and adds org YAML (today: Entra group `ClusterRoleBinding`). Do not commit group object IDs into this installer. `make cluster.<name>.external-auth` still sets `groupMembershipClaims=SecurityGroup` so those bindings match tokens.
+
+The signed-in deployer is a **separate** User binding (`entra-cluster-admin`) from create — break-glass until this Application is Healthy, and if Argo is down. Skip it when the group already covers you:
+
+```bash
+SKIP_RBAC_USER=1 make cluster.<name>.external-auth
+```
+
+See [Who is cluster-admin](external-auth-entra-id.md#who-is-cluster-admin). Do not also pass `GROUP_ID=` if this overlay already owns `entra-cluster-admin-group`.
+
+If the cluster-config repo is private, add it as a GitOps repository credential. Bootstrap still `oc apply -k`s the **local** installer overlay so operators exist before Argo can clone.
 
 ## OperatorHub
 
@@ -96,6 +126,6 @@ Bootstrap needs a **cluster-admin** kubeconfig (`make cluster.<name>.kubeconfig`
 
 ## Related
 
-- [Issue #9](https://github.com/rh-mobb/aro-hcp/issues/9)
+- [Issue #9](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/9)
 - [Full-stack deployment](../prerequisites/full-stack.md)
 - [Architecture](../architecture.md)

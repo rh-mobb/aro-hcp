@@ -66,7 +66,7 @@ An operator with **RG-only** Contributor + UAA cannot register providers if they
 | Cluster operator | Contributor on `hcpOpenShiftClusters` resource | `kubeconfig`, `revoke-credentials`, `external-auth` |
 | Cluster operator (GitOps) | **Key Vault Secrets User** on the customer vault (or reuse deployer Key Vault Administrator) | `bootstrap` — `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set or `additional-pull-secret` already exists |
 | Identity admin | Entra **Application Developer** (or app owner) | `external-auth` Entra steps only, if split |
-| Break-glass | OpenShift `cluster-admin` via 24h kubeconfig | Console secret, `rbac-user` / `rbac-group`, GitOps `oc apply` |
+| Break-glass | OpenShift `cluster-admin` via 24h kubeconfig | Console secret, `entra-cluster-admin` on external-auth unless `SKIP_RBAC_USER=1`, fleet group via cluster-config GitOps |
 
 See [Full-stack deployment — permissions by step](full-stack.md#permissions-by-deployment-step) for every `make` target.
 

@@ -52,8 +52,8 @@ pip install -r requirements-docs.txt
 make docs-preview
 ```
 
-Open [http://127.0.0.1:8000/aro-hcp/](http://127.0.0.1:8000/aro-hcp/).
+Open [http://127.0.0.1:8000/validated-pattern-aro-hcp/](http://127.0.0.1:8000/validated-pattern-aro-hcp/).
 
 ## Related
 
-- [GitHub repository](https://github.com/rh-mobb/aro-hcp)
+- [GitHub repository](https://github.com/rh-mobb/validated-pattern-aro-hcp)

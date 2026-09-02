@@ -4,7 +4,7 @@ This document describes the Azure, Entra, and OpenShift resources that result fr
 
 This is a **customer-side** reference. Terraform provisions prerequisites, the HCP cluster, and the default node pool via AzAPI (`2026-06-30-preview`). Bash wrappers call `az aro hcp` for credentials, extra node pools, and external-auth. Optional GitOps installs in-cluster operators from [`gitops/`](../gitops/). The hosted control plane itself runs in the ARO HCP service, not as VMs in the customer subscription.
 
-**Operator guides:** [Documentation site](https://rh-mobb.github.io/aro-hcp/) · [Account prerequisites](prerequisites/account.md) · [Full-stack deployment and per-step permissions](prerequisites/full-stack.md) · [External auth with Entra ID](guides/external-auth-entra-id.md) · [GitOps bootstrap](guides/gitops.md)
+**Operator guides:** [Documentation site](https://rh-mobb.github.io/validated-pattern-aro-hcp/) · [Account prerequisites](prerequisites/account.md) · [Full-stack deployment and per-step permissions](prerequisites/full-stack.md) · [External auth with Entra ID](guides/external-auth-entra-id.md) · [GitOps bootstrap](guides/gitops.md)
 
 Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 
@@ -214,7 +214,7 @@ Still required or commonly blocked:
 |-------|-----|
 | Azure CLI Microsoft Graph consent | `az ad *` uses Graph as the signed-in user (typically `Application.ReadWrite.All` delegated). First run may prompt consent. If the tenant sets **Do not allow user consent**, a Cloud Application Administrator (or Global Administrator) must grant admin consent to **Azure CLI** for those Graph scopes — that is consent for the CLI, not for the cluster’s OIDC app. |
 | First console / `oc login` | Users may see “Permissions requested” for OpenID/`profile`. They can accept if user consent is allowed. If user consent is disabled, an admin must consent to **this** app (openid/profile), which is still not Application Administrator if someone else already created the app. |
-| `scripts/external-auth.sh rbac-group` | Needs the Entra **group object ID** (`GROUP_ID=`). Looking groups up may need Group Reader / Directory Reader. The script also sets `groupMembershipClaims=SecurityGroup` on the app (owner can do this). |
+| `scripts/external-auth.sh rbac-group` / `GROUP_ID=` on create | Needs the Entra **group object ID**. Looking groups up may need Group Reader / Directory Reader. Prefer a cluster-config GitOps Group binding over `GROUP_ID=` when Argo owns `entra-cluster-admin-group`. |
 
 If an admin must create the app on the operator’s behalf: create the app registration, add the operator as **owner**, then the operator can run `make cluster.<name>.external-auth` (the script reuses `CLIENT_ID` from `.external-auth/state.env`). They still need owner (or a directory role) to run `az ad app credential reset`.
 
@@ -234,7 +234,7 @@ AADSTS65001: The user or administrator has not consented
 
 ### OpenShift RBAC — console secret and `ClusterRoleBinding`
 
-`make cluster.<name>.external-auth` applies a secret in `openshift-config` and (optionally) `entra-cluster-admin`. That uses the **24h admin kubeconfig**, not Entra directory roles. Run `make cluster.<name>.kubeconfig` first.
+`make cluster.<name>.external-auth` applies a secret in `openshift-config` and, when kubeconfig is present, binds the signed-in Entra user as OpenShift `cluster-admin` (`entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. That user binding is break-glass (console/OIDC before GitOps syncs, and if Argo is down). Fleet admins are a **Group** binding (`entra-cluster-admin-group`) in a [cluster-config GitOps overlay](guides/gitops.md#cluster-config-repo) — not this installer’s `gitops/`. Optional `GROUP_ID=` is a one-shot bash apply of that same group binding; do not use it when GitOps already owns the object. Create uses the **24h admin kubeconfig**, not Entra directory roles. Run `make cluster.<name>.kubeconfig` first.
 
 Granting `cluster-admin` to an Entra user or group is OpenShift RBAC (`oc apply`). It does not change Azure or Entra admin roles.
 
@@ -430,7 +430,7 @@ kms.activeKey.version: <azurerm_key_vault_key.etcd_encryption.version>
 
 The KMS identity (`${cluster_name}-kms`) has **Key Vault Crypto User** on the vault. The cluster resource is created only after that assignment exists.
 
-Optional **Red Hat pull secret**: when `pull_secret_path` is set (or Make exports `TF_VAR_pull_secret_path` from `PULL_SECRET_PATH`), Terraform writes a Key Vault secret named `redhat-pull-secret` (`pull_secret_key_vault_secret_name`). The dockerconfigjson is stored in Terraform state as a sensitive value; outputs expose only the vault name and secret name. Clearing `pull_secret_path` after upload **deletes** that Key Vault secret on the next apply — keep the path in gitignored tfvars or pass `PULL_SECRET_PATH` on every apply while Terraform should manage it.
+Optional **Red Hat pull secret**: when `pull_secret_path` is set (or Make exports `TF_VAR_pull_secret_path` from `PULL_SECRET_PATH`), Terraform writes a Key Vault secret named `redhat-pull-secret` (`pull_secret_key_vault_secret_name`). The dockerconfigjson is stored in Terraform state as a sensitive value; outputs expose only the vault name and secret name. Clearing `pull_secret_path` after upload **deletes** that Key Vault secret on the next apply — keep the path set while Terraform should manage it. Example profiles use `../tmp/pull-secret.txt` (resolved from `terraform/`; `tmp/` is gitignored).
 
 `make cluster.<name>.bootstrap` reads that Key Vault secret (`az keyvault secret show`) and applies `kube-system/additional-pull-secret` once so OperatorHub can start. After GitOps is up, External Secrets Operator refreshes the same secret from Key Vault using the ESO workload identity (see [GitOps](#gitops-optional)). `PULL_SECRET_PATH` on bootstrap still wins as an override. HCP has no classic ARO `clusterProfile.pullSecret`; do not patch `openshift-config/pull-secret`.
 
@@ -733,9 +733,9 @@ flowchart TB
 
 `make cluster.<name>.external-auth` (after kubeconfig). **Entra directory permissions** for this step are in [Operator permissions](#operator-permissions); subscription Owner is not enough if the tenant blocks app registration.
 
-1. Reads `properties.console.url` and **merges** redirect URIs: `<console>/auth/callback`, `http://localhost:8000`, and `<gitops-server>/auth/callback` when the GitOps route exists (so a re-run does not drop GitOps SSO).
+1. Reads `properties.console.url` and **merges** redirect URIs: `<console>/auth/callback`, `http://localhost:8000`, and `<gitops-server>/auth/callback` when the GitOps route exists (so a re-run does not drop GitOps SSO). Enables Entra **public client flows** and native `http://localhost` so `oc-oidc` PKCE works on a random localhost port (AADSTS7000218 otherwise).
 2. Creates or reuses an Entra app (`APP_DISPLAY_NAME`, default `${cluster_name}-auth`). Stores `CLIENT_ID` in `.external-auth/state.env`.
-3. Sets optional claims for `groups` on id/access/SAML tokens.
+3. Sets optional claims for `groups` on id/access/SAML tokens and `groupMembershipClaims=SecurityGroup` so GitOps group `ClusterRoleBinding`s can match token object IDs.
 4. Rotates a client secret.
 5. Creates `az aro hcp cluster external-auth` named `EXTERNAL_AUTH_NAME` (default `entra`) with:
    - issuer `https://login.microsoftonline.com/<tenant>/v2.0`
@@ -744,10 +744,11 @@ flowchart TB
    - groups claim
    - confidential console client + public CLI client
 6. Applies Kubernetes secret `entra-console-openshift-console` in `openshift-config` (client secret). If Argo CD is already installed, copies that secret into `openshift-gitops/argocd-secret` (`oidc.entra` credential key) and patches `ArgoCD/openshift-gitops`: remove `spec.sso` (Dex OpenShift OAuth), set `spec.oidcConfig` to the Entra issuer. Does **not** rotate the Entra secret again (that would break the console).
+7. Binds the signed-in Entra user as OpenShift `cluster-admin` (`ClusterRoleBinding` `entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. If `GROUP_ID` is set, also binds that group (`entra-cluster-admin-group`). Fleet group admins belong in a cluster-config GitOps overlay, not this installer.
 
 Without external-auth, the OpenShift console ClusterOperator is typically degraded (missing `console-oauth-config`). The console URL shows HTTP 503 and the OpenShift **"Application is not available"** page. Run `make cluster.<name>.external-auth`.
 
-Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Those create in-cluster `ClusterRoleBinding` objects (`entra-cluster-admin`), not Azure RBAC.
+Helpers on `scripts/external-auth.sh`: `login` (`oc-oidc`), `rbac-user`, `rbac-group`. Create runs `rbac-user` unless `SKIP_RBAC_USER=1` (and `rbac-group` when `GROUP_ID` is set). Those create in-cluster `ClusterRoleBinding` objects, not Azure RBAC.
 
 ## GitOps (optional)
 
@@ -759,8 +760,8 @@ Terraform does not own in-cluster operators. Bootstrap:
 2. Applies [`gitops/bootstrap/`](../gitops/bootstrap/) (OpenShift GitOps `Subscription`, channel `gitops-1.19`, `installPlanApproval: Automatic`).
 3. Waits for the CSV and the default Argo CD instance (`openshift-gitops`).
 4. Publishes ConfigMap `openshift-gitops/aro-platform-metadata` from Terraform outputs (`esoClientId`, `azureTenantId`, `keyVaultUri`, `keyVaultName`, `pullSecretKeyVaultSecretName`). Same handshake as ROSA `rosa-platform-metadata`.
-5. Applies [`gitops/overlays/<profile>/`](../gitops/overlays/) (Web Terminal, Compliance Operator, External Secrets Operator). A Job waits for the ConfigMap, annotates `external-secrets-sa`, and applies `ClusterSecretStore` plus `ExternalSecret` for `additional-pull-secret`.
-6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at this repo. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts).
+5. Applies [`gitops/overlays/<profile>/`](../gitops/overlays/) (Web Terminal, Compliance Operator, External Secrets Operator). Compliance `Subscription.spec.config` sets `nodeSelector` to `node-role.kubernetes.io/worker` and `PLATFORM=HyperShift` so the operator can schedule on HCP (the CSV otherwise selects master nodes). A Job waits for the ConfigMap, annotates `external-secrets-sa`, and applies `ClusterSecretStore` plus `ExternalSecret` for `additional-pull-secret`.
+6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at `GITOPS_REPO` (default this repo, path `GITOPS_SOURCE_ROOT`/`overlay`). A cluster-config repo uses `GITOPS_SOURCE_ROOT=overlays` and Kustomize-includes this tree as a remote base. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts).
 7. If external-auth already ran: merge the GitOps `/auth/callback` redirect URI, copy the console client secret into `argocd-secret`, and patch the default `ArgoCD/openshift-gitops` CR for Entra OIDC (disable Dex). Skip with a log line when `.external-auth/state.env` or the console secret is missing.
 
 HCP has no in-cluster OAuth server. The operator default (`spec.sso.dex.openShiftOAuth: true`) cannot authenticate GitOps users; do not GitOps-own a second Argo CD instance to fix that — patch the prebuilt CR from bootstrap. Client ID and secret stay out of committed `gitops/` YAML.

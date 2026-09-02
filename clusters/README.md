@@ -47,4 +47,4 @@ Per cluster (gitignored for operator dirs):
 
 Never commit state files, private keys, kubeconfig, or Red Hat pull secrets.
 
-GitOps: `PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply` writes Key Vault `redhat-pull-secret`; `make cluster.<name>.bootstrap` applies it as `kube-system/additional-pull-secret`.
+GitOps: example profiles set `pull_secret_path = "../tmp/pull-secret.txt"` (copy a Red Hat dockerconfigjson there; the path is gitignored). Apply writes Key Vault `redhat-pull-secret`; `make cluster.<name>.bootstrap` applies it as `kube-system/additional-pull-secret`. `PULL_SECRET_PATH` still overrides.

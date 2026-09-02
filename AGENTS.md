@@ -115,7 +115,7 @@ Targets `2026-06-30-preview` via AzAPI (`hcpOpenShiftClusters` / `nodePools`) an
 
 When a change affects deploy behavior or resultant Azure/Entra/OpenShift resources, update the docs **in the same work**, not later.
 
-- [`docs/index.md`](docs/index.md) — documentation site home (published at [rh-mobb.github.io/aro-hcp](https://rh-mobb.github.io/aro-hcp/)).
+- [`docs/index.md`](docs/index.md) — documentation site home (published at [rh-mobb.github.io/validated-pattern-aro-hcp](https://rh-mobb.github.io/validated-pattern-aro-hcp/)).
 - [`docs/prerequisites/account.md`](docs/prerequisites/account.md) — subscription allow-list, RBAC baseline, quotas, tools.
 - [`docs/prerequisites/full-stack.md`](docs/prerequisites/full-stack.md) — deployment workflow and [permissions by step](docs/prerequisites/full-stack.md#permissions-by-deployment-step).
 - [`docs/guides/external-auth-entra-id.md`](docs/guides/external-auth-entra-id.md) — Entra OIDC, directory roles, consent.

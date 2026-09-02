@@ -80,7 +80,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | Create / update infra | `cluster.<name>.apply` | **Contributor + UAA** or **Owner** on customer RG; subscription **Contributor** once if RPs not registered | None | None |
 | Admin kubeconfig | `cluster.<name>.kubeconfig` | **Contributor** on cluster resource (or RG) | None | None |
 | Revoke admin creds | `cluster.<name>.revoke-credentials` | **Contributor** on cluster resource | None | None |
-| External auth + console | `cluster.<name>.external-auth` | **Contributor** on cluster (`externalAuths` write) | App create + credential reset — see [Entra guide](../guides/external-auth-entra-id.md) | **cluster-admin** kubeconfig (24h) for console secret |
+| External auth + console | `cluster.<name>.external-auth` | **Contributor** on cluster (`externalAuths` write) | App create + credential reset — see [Entra guide](../guides/external-auth-entra-id.md) | **cluster-admin** kubeconfig (24h) for console secret and optional `entra-cluster-admin` (`SKIP_RBAC_USER=1` skips the user binding) |
 | Remove external auth | `cluster.<name>.external-auth-delete` | **Contributor** on cluster | App **owner** or role with `Application.ReadWrite.All` delegated via Azure CLI | Optional admin kubeconfig to delete secret |
 | Print sshuttle command | `cluster.<name>.jump` | None (reads tfvars / outputs) | None | None |
 | Start sshuttle (background) | `cluster.<name>.sshuttle.connect` | None (reads tfvars / outputs; jump VM must exist) | None | None |
@@ -134,7 +134,7 @@ Calls `az aro hcp cluster request-credential` / `revoke-credential`. Requires **
 |-------|---------|
 | Azure | **Contributor** on cluster — creates `externalAuths` child resource |
 | Entra | Create app, SP, optional claims, client secret — [External auth guide](../guides/external-auth-entra-id.md) |
-| OpenShift | Valid admin **kubeconfig** — applies `openshift-config` console secret |
+| OpenShift | Valid admin **kubeconfig** — applies `openshift-config` console secret and binds the signed-in Entra user as OpenShift `cluster-admin` (`entra-cluster-admin`) unless `SKIP_RBAC_USER=1`. Fleet group admins: cluster-config GitOps. Optional `GROUP_ID=` is a one-shot group binding. |
 
 Console is not usable until this step completes (ClusterOperator `console` stays degraded without the OAuth secret).
 
