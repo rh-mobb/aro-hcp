@@ -68,3 +68,19 @@ module "cluster" {
 
   depends_on = [module.identities]
 }
+
+module "entra" {
+  count  = var.enable_external_auth ? 1 : 0
+  source = "../modules/entra"
+
+  cluster_name           = var.cluster_name
+  cluster_id             = module.cluster.cluster_id
+  console_url            = coalesce(module.cluster.console_url, "")
+  dns_base_domain        = coalesce(module.cluster.dns_base_domain, "")
+  dns_base_domain_prefix = coalesce(module.cluster.dns_base_domain_prefix, "")
+  tenant_id              = module.identities.tenant_id
+  key_vault_id           = module.identities.key_vault_id
+  oidc_web_redirects     = var.oidc_web_redirects
+
+  depends_on = [module.cluster, module.identities]
+}

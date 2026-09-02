@@ -4,7 +4,7 @@ Instructions for AI agents working in this repository.
 
 ## What this repo is
 
-Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 HCP managed identities plus one External Secrets Operator workload identity, RBAC) and the HCP cluster plus default node pool via AzAPI. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth.
+Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prerequisites (network, Key Vault, 13 HCP managed identities plus one External Secrets Operator workload identity, RBAC), the HCP cluster plus default node pool via AzAPI, and the Entra OIDC app (`externalAuths/entra`). Bash scripts wrap `az aro hcp` for credentials, extra node pools, applying the console secret, and GitOps bootstrap.
 
 This is **not** the Azure/ARO-HCP service codebase. Do not refactor `references/ARO-HCP/` or `references/bennerv-ARO-HCP/` (gitignored clones).
 
@@ -34,6 +34,7 @@ When sources disagree:
 | `modules/network/` | RG, VNet, NSG, worker + integration subnets |
 | `modules/identities/` | Key Vault, etcd key, optional pull-secret KV secret, 13 HCP MIs + ESO workload identity, RBAC |
 | `modules/cluster/` | AzAPI HCP cluster + default node pool |
+| `modules/entra/` | Entra OIDC app, redirect URIs from cluster DNS, KV secret, `externalAuths` |
 | `modules/jumpbox/` | Optional Fedora jump VM |
 | `terraform/` | Thin root: providers, backend, module composition |
 | `clusters/<name>/` | Per-cluster `terraform.tfvars` + state |

@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `modules/entra` — Entra OIDC app, service principal, Key Vault client secret, and AzAPI `externalAuths/entra` as part of `make cluster.<name>.apply` (redirect URIs from cluster DNS)
+- `enable_external_auth` (default true) and `oidc_web_redirects` (default RHOAI `rh-ai` `/oauth2/callback`); console, GitOps, and PKCE `http://localhost` are always registered
 - `GITOPS_SOURCE_ROOT` so Argo can sync a cluster-config repo (`overlays/public|private`) that Kustomize-includes this installer’s `gitops/` as a remote base ([`validated-pattern-aro-hcp-cluster-config`](https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config))
 - `SKIP_RBAC_USER=1` on `make cluster.<name>.external-auth` to skip the signed-in user `entra-cluster-admin` binding when a GitOps group binding already covers the operator
 - Example `pull_secret_path = "../tmp/pull-secret.txt"` on public/private tfvars (file gitignored)
@@ -26,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `hack/versions` — plan-time OpenShift version validation per region
 
 ### Changed
+- Deployer is Entra app and service-principal **owner** so Graph can add the client secret (`Application.ReadWrite.OwnedBy` cannot manage an ownerless app)
+- `make cluster.<name>.external-auth` applies the console secret and CRBs from Key Vault when Terraform owns the app; it does not create or rotate the registration. Entra Graph rights are required at **apply**, not only at external-auth. `external-auth-delete` leaves ARM `externalAuths` and the app for `terraform destroy`
 - GitHub / Pages URLs to [`rh-mobb/validated-pattern-aro-hcp`](https://github.com/rh-mobb/validated-pattern-aro-hcp) (`https://rh-mobb.github.io/validated-pattern-aro-hcp/`)
 - `make cluster.<name>.external-auth` always sets Entra `groupMembershipClaims=SecurityGroup` so GitOps group `ClusterRoleBinding`s match token object IDs; fleet admins belong in the cluster-config repo, not this installer’s `gitops/`
 - Compliance Operator `Subscription` selects `node-role.kubernetes.io/worker` and `PLATFORM=HyperShift` (HCP has no masters)

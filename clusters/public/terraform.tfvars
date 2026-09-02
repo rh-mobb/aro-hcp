@@ -36,3 +36,11 @@ enable_jumpbox = false
 # resolved from terraform/. The file is gitignored (tmp/ and pull-secret.txt).
 pull_secret_path = "../tmp/pull-secret.txt"
 # pull_secret_key_vault_secret_name = "redhat-pull-secret"
+
+# Entra OIDC (Terraform). Console, GitOps, and PKCE http://localhost are always
+# registered after cluster DNS is known. Extra Web callbacks (host + path):
+# oidc_web_redirects = {}
+# oidc_web_redirects = {
+#   rhoai = { host = "rh-ai", path = "/oauth2/callback" }  # default
+# }
+# enable_external_auth = false

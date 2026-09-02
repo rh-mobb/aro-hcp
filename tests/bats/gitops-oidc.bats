@@ -114,6 +114,21 @@ setup() {
   [[ "$output" == *"cmd_rbac_group"* ]]
 }
 
+@test "external-auth create uses Terraform-managed Entra when entra_client_id is set" {
+  run awk '/^cmd_create\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"terraform_managed_entra"* ]]
+  [[ "$output" == *"load_console_secret_from_key_vault"* ]]
+  [[ "$output" == *"skip app create"* ]]
+}
+
+@test "external-auth delete does not remove Terraform-managed Entra app" {
+  run awk '/^cmd_delete\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Terraform owns"* ]]
+  [[ "$output" == *"terraform destroy"* ]]
+}
+
 @test "rbac-user and rbac-group use distinct ClusterRoleBinding names" {
   local script="${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
   run awk '/^cmd_rbac_user\(\)/,/^}$/' "${script}"

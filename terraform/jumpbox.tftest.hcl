@@ -17,10 +17,14 @@ mock_provider "azapi" {
             issuerUrl = "https://uksouth.oic.aro.azure.com/00000000-0000-0000-0000-000000000001/test"
           }
           api = {
-            url = "https://api.example.aroapp.io:6443"
+            url = "https://api.test-cluster.3lzd.uksouth.aroapp-hcp.io:443"
           }
           console = {
-            url = "https://console.example.aroapp.io"
+            url = "https://console-openshift-console.apps.aro.test-cluster.3lzd.uksouth.aroapp-hcp.io"
+          }
+          dns = {
+            baseDomain       = "3lzd.uksouth.aroapp-hcp.io"
+            baseDomainPrefix = "test-cluster"
           }
         }
       }
@@ -39,6 +43,15 @@ mock_provider "azapi" {
   }
 }
 mock_provider "random" {}
+mock_provider "azuread" {
+  mock_data "azuread_client_config" {
+    defaults = {
+      tenant_id = "00000000-0000-0000-0000-000000000001"
+      object_id = "00000000-0000-0000-0000-000000000002"
+      client_id = "00000000-0000-0000-0000-000000000003"
+    }
+  }
+}
 
 variables {
   cluster_name        = "test-cluster"
@@ -123,5 +136,27 @@ run "eso_federated_credential_trusts_named_sa" {
   assert {
     condition     = contains(azurerm_federated_identity_credential.eso.audience, "api://AzureADTokenExchange")
     error_message = "ESO federated credential audience must be api://AzureADTokenExchange."
+  }
+}
+
+run "entra_registers_console_gitops_and_default_rhoai" {
+  command = plan
+
+  assert {
+    condition     = length(module.entra) == 1
+    error_message = "Entra module must be enabled by default."
+  }
+}
+
+run "entra_can_be_disabled" {
+  command = plan
+
+  variables {
+    enable_external_auth = false
+  }
+
+  assert {
+    condition     = length(module.entra) == 0
+    error_message = "enable_external_auth = false must skip the Entra module."
   }
 }

@@ -1,8 +1,12 @@
 # External Authentication with Microsoft Entra ID
 
-Configure ARO HCP console and CLI OIDC using Microsoft Entra ID. This repository automates the flow with `make cluster.<name>.external-auth` ([`scripts/external-auth.sh`](../../scripts/external-auth.sh)).
+Configure ARO HCP console and CLI OIDC using Microsoft Entra ID.
 
-**Console is not usable until external-auth completes** — without it, the console URL returns “Application is not available” and ClusterOperator `console` stays degraded.
+**Terraform** (`modules/entra`, part of `make cluster.<name>.apply`) creates the Entra app (with the deployer as **owner**), Key Vault client secret, and `externalAuths/entra`. Console, GitOps, and PKCE (`http://localhost`) redirect URIs are always registered from cluster DNS. Extra callbacks are `oidc_web_redirects` (default: RHOAI `rh-ai` `/oauth2/callback`). Without `owners`, Graph can leave the app unmanageable (`403` on secrets and the service principal).
+
+**`make cluster.<name>.external-auth`** ([`scripts/external-auth.sh`](../../scripts/external-auth.sh)) after kubeconfig applies the console secret and cluster-admin CRBs. It does **not** create or rotate the app when Terraform already owns it (`entra_client_id` output).
+
+**Console is not usable until that secret is applied** — without it, the console URL returns “Application is not available” and ClusterOperator `console` stays degraded.
 
 ## Architecture
 
@@ -30,14 +34,14 @@ graph TB
     style ARO fill:#ee0000,color:#fff
 ```
 
-The script:
+The script (when Terraform already created the app):
 
-1. Creates or updates an Entra app registration. Redirect URIs are **merged**: console `/auth/callback`, `http://localhost:8000`, and GitOps `/auth/callback` when the `openshift-gitops-server` route exists. A re-run does not drop a GitOps URI. Enables **public client flows** (`isFallbackPublicClient`) and native redirect `http://localhost` so `oc login --exec-plugin=oc-oidc` can complete Auth Code + PKCE on a random localhost port (the console client secret stays for the confidential console/GitOps clients).
-2. Resets a client secret for the confidential console client (create path only — GitOps SSO copies this secret and must not reset it again).
-3. Calls `az aro hcp cluster external-auth create` (issuer, audience, username claim, groups claim, console + CLI clients).
-4. Applies the console client secret to `openshift-config` using the **24h admin kubeconfig**.
-5. OpenShift `cluster-admin` — two different bindings; see [Who is cluster-admin](#who-is-cluster-admin). Create binds the signed-in Entra user unless `SKIP_RBAC_USER=1`. Sets `groupMembershipClaims=SecurityGroup` so GitOps group bindings can match token object IDs.
-6. If the default Argo CD instance is already installed, patches it for Entra OIDC (same app). Otherwise `make cluster.<name>.bootstrap` does that patch after GitOps is up.
+1. Reads `entra_client_id` and the client secret from Key Vault (no `az ad app credential reset`).
+2. Applies the console client secret to `openshift-config` using the **24h admin kubeconfig**.
+3. OpenShift `cluster-admin` — two different bindings; see [Who is cluster-admin](#who-is-cluster-admin). Create binds the signed-in Entra user unless `SKIP_RBAC_USER=1`.
+4. If the default Argo CD instance is already installed, patches it for Entra OIDC (same app). Otherwise `make cluster.<name>.bootstrap` does that patch after GitOps is up.
+
+If `enable_external_auth = false`, the script still creates the Entra app (merge redirect URIs, public client PKCE, `groupMembershipClaims=SecurityGroup`) and `az aro hcp cluster external-auth create` as before.
 
 Run `make cluster.<name>.kubeconfig` before `external-auth`.
 

@@ -53,6 +53,7 @@ fmt: ## Format Terraform and shell scripts
 	terraform -chdir=$(MODULES_DIR)/identities fmt
 	terraform -chdir=$(MODULES_DIR)/cluster fmt
 	terraform -chdir=$(MODULES_DIR)/jumpbox fmt
+	terraform -chdir=$(MODULES_DIR)/entra fmt
 	terraform -chdir=$(VERSIONS_TF_DIR) fmt
 	@command -v shfmt >/dev/null && shfmt -w -i 2 -ci -bn $(SCRIPTS) || echo "shfmt not installed; skipping"
 
@@ -63,6 +64,7 @@ lint: ## Run linters (terraform validate/tflint, shellcheck)
 	terraform -chdir=$(MODULES_DIR)/identities init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/identities validate
 	terraform -chdir=$(MODULES_DIR)/cluster init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/cluster validate
 	terraform -chdir=$(MODULES_DIR)/jumpbox init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/jumpbox validate
+	terraform -chdir=$(MODULES_DIR)/entra init -backend=false -input=false && terraform -chdir=$(MODULES_DIR)/entra validate
 	terraform -chdir=$(VERSIONS_TF_DIR) init -backend=false -input=false
 	terraform -chdir=$(VERSIONS_TF_DIR) validate
 	@command -v tflint >/dev/null && (cd $(TF_DIR) && tflint --init && tflint) || echo "tflint not installed; skipping"
@@ -70,6 +72,7 @@ lint: ## Run linters (terraform validate/tflint, shellcheck)
 	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/identities && tflint --init && tflint) || true
 	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/cluster && tflint --init && tflint) || true
 	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/jumpbox && tflint --init && tflint) || true
+	@command -v tflint >/dev/null && (cd $(MODULES_DIR)/entra && tflint --init && tflint) || true
 	@command -v shellcheck >/dev/null && (cd $(SCRIPTS) && shellcheck --external-sources *.sh) || echo "shellcheck not installed; skipping"
 	@command -v shfmt >/dev/null && shfmt -d -i 2 -ci -bn $(SCRIPTS) || true
 	@if command -v oc >/dev/null 2>&1; then \
@@ -90,6 +93,7 @@ test: lint ## Run unit tests (terraform test + bats)
 	terraform -chdir=$(MODULES_DIR)/identities test; \
 	terraform -chdir=$(MODULES_DIR)/cluster test; \
 	terraform -chdir=$(MODULES_DIR)/jumpbox test; \
+	terraform -chdir=$(MODULES_DIR)/entra test; \
 	terraform -chdir=$(TF_DIR) test; \
 	terraform -chdir=$(VERSIONS_TF_DIR) test
 	@if command -v bats >/dev/null; then bats $(ROOT_DIR)/tests/bats; else echo "bats not installed; skipping"; fi

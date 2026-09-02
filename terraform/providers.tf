@@ -12,3 +12,5 @@ provider "azurerm" {
 provider "azapi" {}
 
 provider "random" {}
+
+provider "azuread" {}

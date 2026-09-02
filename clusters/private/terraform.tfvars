@@ -22,3 +22,4 @@ enable_jumpbox = true
 # Red Hat pull secret for OperatorHub (GitOps bootstrap). Relative paths are
 # resolved from terraform/. The file is gitignored (tmp/ and pull-secret.txt).
 pull_secret_path = "../tmp/pull-secret.txt"
+# oidc_web_redirects = {}   # extra Entra Web callbacks; console + GitOps + PKCE always on
