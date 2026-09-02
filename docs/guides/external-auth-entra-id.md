@@ -32,11 +32,12 @@ graph TB
 
 The script:
 
-1. Creates or updates an Entra app registration. Redirect URIs are **merged**: console `/auth/callback`, `http://localhost:8000`, and GitOps `/auth/callback` when the `openshift-gitops-server` route exists. A re-run does not drop a GitOps URI.
+1. Creates or updates an Entra app registration. Redirect URIs are **merged**: console `/auth/callback`, `http://localhost:8000`, and GitOps `/auth/callback` when the `openshift-gitops-server` route exists. A re-run does not drop a GitOps URI. Enables **public client flows** (`isFallbackPublicClient`) and native redirect `http://localhost` so `oc login --exec-plugin=oc-oidc` can complete Auth Code + PKCE on a random localhost port (the console client secret stays for the confidential console/GitOps clients).
 2. Resets a client secret for the confidential console client (create path only — GitOps SSO copies this secret and must not reset it again).
 3. Calls `az aro hcp cluster external-auth create` (issuer, audience, username claim, groups claim, console + CLI clients).
 4. Applies the console client secret to `openshift-config` using the **24h admin kubeconfig**.
-5. If the default Argo CD instance is already installed, patches it for Entra OIDC (same app). Otherwise `make cluster.<name>.bootstrap` does that patch after GitOps is up.
+5. OpenShift `cluster-admin` — two different bindings; see [Who is cluster-admin](#who-is-cluster-admin). Create binds the signed-in Entra user unless `SKIP_RBAC_USER=1`. Sets `groupMembershipClaims=SecurityGroup` so GitOps group bindings can match token object IDs.
+6. If the default Argo CD instance is already installed, patches it for Entra OIDC (same app). Otherwise `make cluster.<name>.bootstrap` does that patch after GitOps is up.
 
 Run `make cluster.<name>.kubeconfig` before `external-auth`.
 
@@ -105,22 +106,33 @@ State file: `.external-auth/state.env` (gitignored) — stores `CLIENT_ID` for i
 
 | Command | Azure | Entra | OpenShift |
 |---------|-------|-------|-----------|
-| `create` (default via make) | Contributor on cluster | App + SP + secret | Admin kubeconfig |
+| `create` (default via make) | Contributor on cluster | App + SP + secret | Admin kubeconfig — console secret; `entra-cluster-admin` for the signed-in user unless `SKIP_RBAC_USER=1` |
 | `show` | Reader on cluster | None | None |
 | `delete` (via `external-auth-delete`) | Contributor on cluster | Delete app (owner or elevated role) | Optional — delete console secret |
-| `rbac-user` | None | `az ad signed-in-user show` | Admin kubeconfig — `ClusterRoleBinding` to `cluster-admin` |
-| `rbac-group` | None | Optional `groupMembershipClaims` on app | Admin kubeconfig — `GROUP_ID=` required |
-| `login` | None | Token or client secret | OIDC or token login |
+| `rbac-user` | None | `az ad signed-in-user show` | Admin kubeconfig — `ClusterRoleBinding` `entra-cluster-admin` (also run from create unless `SKIP_RBAC_USER=1`) |
+| `rbac-group` | None | Optional `groupMembershipClaims` on app | Admin kubeconfig — `GROUP_ID=` required; binding `entra-cluster-admin-group` (also run from create when `GROUP_ID` is set) |
+| `login` | None | Browser PKCE (`oc-oidc`) | OIDC login |
 
-Grant OpenShift access to your Entra user:
+## Who is cluster-admin
+
+Entra login is **authentication**. OpenShift `cluster-admin` is a **separate** `ClusterRoleBinding`. Do not mix these two bindings, and do not put either in this installer’s `gitops/` tree.
+
+| Binding | Name | Subject | Source of truth | When you need it |
+|---------|------|---------|-----------------|------------------|
+| Deployer (break-glass) | `entra-cluster-admin` | **User** — signed-in UPN (`az ad signed-in-user`) | `make cluster.<name>.external-auth` | Console/`oc` Entra login **before** GitOps has synced, and if Argo is down. You are not “the fleet admin list.” |
+| Fleet admins | `entra-cluster-admin-group` | **Group** — Entra security group object ID | [Cluster-config repo](gitops.md#cluster-config-repo) (preferred), or `GROUP_ID=` / `rbac-group` once | Same admins on every cluster. Add people in Entra, not YAML. |
+
+Default create applies the **user** binding so the person who just stood the cluster up is not 403 until Argo syncs. Skip it when the cluster-config group already covers you (or you only use the 24h kubeconfig until GitOps is Healthy):
 
 ```bash
-bash scripts/external-auth.sh rbac-user
+SKIP_RBAC_USER=1 make cluster.<name>.external-auth
 ```
 
-Grant to an Entra security group:
+Do not also pass `GROUP_ID=` if GitOps already owns `entra-cluster-admin-group` — two writers on the same object. One-shot without GitOps:
 
 ```bash
+GROUP_ID=<object-id> make cluster.<name>.external-auth
+# or later (does not rotate the console secret):
 GROUP_ID=<object-id> bash scripts/external-auth.sh rbac-group
 ```
 
@@ -135,7 +147,7 @@ Users authenticating to the console or `oc login --exec-plugin=oc-oidc` may see 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `Authorization_RequestDenied` on `az ad app create` / `credential reset` | User app registration disabled; no Application Developer | Assign Application Developer or have admin create app + add you as owner |
-| `AADSTS65001` | Missing consent | Admin consent for Azure CLI Graph scopes and/or OIDC app |
+| `AADSTS7000218` `client_assertion` or `client_secret` | `oc-oidc` PKCE against a confidential-only app (secret present, public client flows off) | Re-run `make cluster.<name>.external-auth` (script sets `isFallbackPublicClient` and native `http://localhost`). Do not pass `--client-secret` on the CLI. |
 | Console 503 / “Application is not available” | External-auth not run or secret missing | Re-run `make cluster.<name>.external-auth` after fresh kubeconfig |
 | Invalid redirect URI | Console URL changed or wrong callback | Re-run create — script **merges** redirect URIs from live console URL (and GitOps route if present) |
 | GitOps “Log in via OpenShift” / Dex connection refused | Default Dex uses in-cluster OAuth, which HCP does not have | Run external-auth then bootstrap; GitOps login is **Microsoft Entra ID**, not OpenShift OAuth |

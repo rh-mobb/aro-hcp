@@ -1,10 +1,10 @@
 site_name: ARO HCP Reference Deployment
 site_description: Terraform reference for Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)
-site_url: https://rh-mobb.github.io/aro-hcp/
-repo_url: https://github.com/rh-mobb/aro-hcp
-repo_name: rh-mobb/aro-hcp
+site_url: https://rh-mobb.github.io/validated-pattern-aro-hcp/
+repo_url: https://github.com/rh-mobb/validated-pattern-aro-hcp
+repo_name: rh-mobb/validated-pattern-aro-hcp
 edit_uri: edit/main/docs/
-copyright: Community reference deployment documentation (rh-mobb/aro-hcp).
+copyright: Community reference deployment documentation (rh-mobb/validated-pattern-aro-hcp).
 
 theme:
   name: material

@@ -118,8 +118,8 @@ docs-venv: ## Create docs virtualenv and install requirements-docs.txt
 	@$(DOCS_PIP) install -q -r requirements-docs.txt
 	@echo "Docs dependencies ready"
 
-docs-preview: docs-venv ## Serve docs at http://127.0.0.1:8000/aro-hcp/
-	@echo "Documentation preview: http://127.0.0.1:8000/aro-hcp/"
+docs-preview: docs-venv ## Serve docs at http://127.0.0.1:8000/validated-pattern-aro-hcp/
+	@echo "Documentation preview: http://127.0.0.1:8000/validated-pattern-aro-hcp/"
 	@echo "Press Ctrl+C to stop"
 	@$(DOCS_MKDOCS) serve
 

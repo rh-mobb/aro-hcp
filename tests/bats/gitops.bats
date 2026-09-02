@@ -31,6 +31,15 @@ EOF
   [[ "$output" == *"channel: stable"* ]]
 }
 
+@test "gitops dry-run schedules Compliance Operator on HCP workers" {
+  run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"name: compliance-operator"* ]]
+  [[ "$output" == *"node-role.kubernetes.io/worker"* ]]
+  [[ "$output" == *"name: PLATFORM"* ]]
+  [[ "$output" == *"value: HyperShift"* ]]
+}
+
 @test "gitops dry-run includes external-secrets operator subscription" {
   run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
   [ "$status" -eq 0 ]
@@ -89,6 +98,16 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"repoURL: https://example.com/fork.git"* ]]
   [[ "$output" == *"targetRevision: feat/gitops"* ]]
+}
+
+@test "gitops dry-run honors GITOPS_SOURCE_ROOT for a cluster-config repo" {
+  GITOPS_REPO=https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config.git \
+  GITOPS_SOURCE_ROOT=overlays \
+    run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"repoURL: https://github.com/rh-mobb/validated-pattern-aro-hcp-cluster-config.git"* ]]
+  [[ "$output" == *"path: overlays/public"* ]]
+  [[ "$output" != *"path: gitops/overlays/public"* ]]
 }
 
 @test "gitops dry-run maps custom cluster dir to public overlay" {

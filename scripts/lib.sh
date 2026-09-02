@@ -262,6 +262,12 @@ sync_entra_redirect_uris() {
   ((${#merged[@]} > 0)) || die "No Entra redirect URIs to set"
   log "Entra redirect URIs: ${merged[*]}"
   az ad app update --id "${CLIENT_ID}" --web-redirect-uris "${merged[@]}" >/dev/null
+  # oc-oidc uses Auth Code + PKCE on a random http://localhost:<port>/. Entra
+  # treats an app with a client secret as confidential unless public-client
+  # flows are enabled (AADSTS7000218). Native http://localhost allows any port.
+  az ad app update --id "${CLIENT_ID}" \
+    --is-fallback-public-client true \
+    --public-client-redirect-uris "http://localhost" >/dev/null
 }
 
 # Patch the operator-created ArgoCD/openshift-gitops CR for Entra OIDC.

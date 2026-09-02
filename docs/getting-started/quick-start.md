@@ -22,6 +22,8 @@ make setup    # az aro hcp extension
 ```bash
 cp -r clusters/public clusters/my-cluster
 # Edit clusters/my-cluster/terraform.tfvars — location, cluster_name, versions
+mkdir -p tmp
+cp /path/to/pull-secret.txt tmp/pull-secret.txt   # required by example pull_secret_path
 ```
 
 Check for conflicting environment overrides:
@@ -50,19 +52,11 @@ make cluster.my-cluster.versions
 
 ```bash
 make cluster.my-cluster.kubeconfig       # admin creds, 24h TTL → .kube/config
-make cluster.my-cluster.external-auth    # Entra app + console OAuth secret
-# optional GitOps: store pull secret on apply first, then bootstrap
-# PULL_SECRET_PATH=~/pull-secret.txt make cluster.my-cluster.apply
+make cluster.my-cluster.external-auth    # Entra + console; cluster-admin for you unless SKIP_RBAC_USER=1
 make cluster.my-cluster.bootstrap        # OpenShift GitOps + Web Terminal + Compliance + ESO
 ```
 
-External-auth requires Entra rights separate from Azure Owner — see [External auth with Entra ID](../guides/external-auth-entra-id.md).
-
-Optional — grant yourself OpenShift cluster-admin via Entra user:
-
-```bash
-bash scripts/external-auth.sh rbac-user
-```
+External-auth requires Entra rights separate from Azure Owner — see [External auth with Entra ID](../guides/external-auth-entra-id.md). Extra OpenShift admins: a group `ClusterRoleBinding` in a [cluster-config repo](../guides/gitops.md#cluster-config-repo). Create also binds **you** as `cluster-admin` (break-glass); skip with `SKIP_RBAC_USER=1 make cluster.my-cluster.external-auth`.
 
 ## 4. Verify
 

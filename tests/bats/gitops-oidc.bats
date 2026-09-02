@@ -70,3 +70,57 @@ setup() {
   [[ "$output" != *"| oc apply"* ]]
   [[ "$output" == *"rollout restart deploy/openshift-gitops-server"* ]]
 }
+
+@test "sync_entra_redirect_uris enables public client flows for oc-oidc PKCE" {
+  run awk '/^sync_entra_redirect_uris\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/lib.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--is-fallback-public-client"* ]]
+  [[ "$output" == *"true"* ]]
+  [[ "$output" == *"--public-client-redirect-uris"* ]]
+  [[ "$output" == *"http://localhost"* ]]
+}
+
+@test "external-auth login uses oc-oidc PKCE without client secret" {
+  run awk '/^cmd_login\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--exec-plugin=oc-oidc"* ]]
+  [[ "$output" != *"--client-secret"* ]]
+  [[ "$output" != *"get-access-token"* ]]
+}
+
+@test "external-auth create sets groupMembershipClaims for GitOps group RBAC" {
+  run awk '/^create_entra_app\(\)/,/^create_entra_credential\(\)/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"groupMembershipClaims=SecurityGroup"* ]]
+}
+
+@test "external-auth create binds signed-in Entra user as cluster-admin" {
+  run awk '/^cmd_create\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cmd_rbac_user"* ]]
+}
+
+@test "external-auth create skips signed-in user binding when SKIP_RBAC_USER is set" {
+  run awk '/^cmd_create\(\)/,/^cmd_show\(\)/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SKIP_RBAC_USER"* ]]
+  [[ "$output" == *"cmd_rbac_user"* ]]
+}
+
+@test "external-auth create binds GROUP_ID when set" {
+  run awk '/^cmd_create\(\)/,/^}$/' "${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"GROUP_ID"* ]]
+  [[ "$output" == *"cmd_rbac_group"* ]]
+}
+
+@test "rbac-user and rbac-group use distinct ClusterRoleBinding names" {
+  local script="${BATS_TEST_DIRNAME}/../../scripts/external-auth.sh"
+  run awk '/^cmd_rbac_user\(\)/,/^}$/' "${script}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"name: entra-cluster-admin"* ]]
+  [[ "$output" != *"entra-cluster-admin-group"* ]]
+  run awk '/^cmd_rbac_group\(\)/,/^}$/' "${script}"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"name: entra-cluster-admin-group"* ]]
+}

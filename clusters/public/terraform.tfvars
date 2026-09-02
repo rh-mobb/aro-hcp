@@ -32,7 +32,7 @@ enable_jumpbox = false
 # Required when enable_jumpbox is true. SSH 22 from this CIDR only (use your /32).
 # jump_ssh_source_prefix = "1.2.3.4/32"
 
-# Optional Red Hat pull secret for OperatorHub (GitOps bootstrap). Prefer
-# PULL_SECRET_PATH=~/pull-secret.txt make cluster.<name>.apply  (never commit the file).
-# pull_secret_path = "/absolute/path/to/pull-secret.txt"
+# Red Hat pull secret for OperatorHub (GitOps bootstrap). Relative paths are
+# resolved from terraform/. The file is gitignored (tmp/ and pull-secret.txt).
+pull_secret_path = "../tmp/pull-secret.txt"
 # pull_secret_key_vault_secret_name = "redhat-pull-secret"

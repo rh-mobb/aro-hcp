@@ -61,5 +61,6 @@ tests/bats/tmp/
 .venv-docs/
 site/
 
-# Red Hat pull secrets (never commit)
+# Red Hat pull secrets and operator scratch (never commit)
 pull-secret.txt
+/tmp/

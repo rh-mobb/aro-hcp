@@ -2,7 +2,7 @@
 
 Reference implementation for deploying **Azure Red Hat OpenShift Hosted Control Plane (ARO HCP)** using Terraform (azurerm + AzAPI) for Azure prerequisites, the HCP cluster, and the default node pool. Bash scripts wrap `az aro hcp` for credentials, extra node pools, and external-auth. Targets the `2026-06-30-preview` API.
 
-**Documentation:** [https://rh-mobb.github.io/aro-hcp/](https://rh-mobb.github.io/aro-hcp/) — prerequisites, permissions by step, external-auth, and architecture. Local preview: `make docs-preview`.
+**Documentation:** [https://rh-mobb.github.io/validated-pattern-aro-hcp/](https://rh-mobb.github.io/validated-pattern-aro-hcp/) — prerequisites, permissions by step, external-auth, and architecture. Local preview: `make docs-preview`.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ make cluster.my-cluster.init
 make cluster.my-cluster.plan
 make cluster.my-cluster.apply           # prereqs + cluster + default nodepool (~30-60 min)
 make cluster.my-cluster.kubeconfig      # admin creds (24h TTL)
-make cluster.my-cluster.external-auth   # Entra + console (required for usable console)
+make cluster.my-cluster.external-auth   # Entra + console; cluster-admin for you unless SKIP_RBAC_USER=1
 ```
 
 Committed examples: [`clusters/public`](clusters/public/terraform.tfvars) (public API/ingress) and [`clusters/private`](clusters/private/terraform.tfvars) (private + jump box). See [`clusters/README.md`](clusters/README.md).
@@ -88,8 +88,8 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.jump` | Print sshuttle command (foreground) |
 | `make cluster.<name>.sshuttle.connect` | Start sshuttle in the background (`clusters/<name>/sshuttle.pid`) |
 | `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
-| `make cluster.<name>.external-auth` | Entra app + external-auth + console |
-| `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional) |
+| `make cluster.<name>.external-auth` | Entra app + external-auth + console; binds signed-in user as `cluster-admin` unless `SKIP_RBAC_USER=1` |
+| `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional). Point Argo at a [cluster-config repo](docs/guides/gitops.md#cluster-config-repo) with `GITOPS_REPO` + `GITOPS_SOURCE_ROOT=overlays`. |
 | `make cluster.<name>.external-auth-delete` | Remove external-auth |
 
 ## Configuration
@@ -104,7 +104,7 @@ Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfv
 | `ingress_visibility` | `Public` | Create-time only: `Public`, `Private`, or `Disabled`. Console / `*.apps`. |
 | `enable_jumpbox` | `false` | When `true`, Terraform creates the Fedora jump VM. |
 | `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
-| `pull_secret_path` | (empty) | Optional. Path to a Red Hat dockerconfigjson. When set, Terraform writes Key Vault `redhat-pull-secret`. Prefer `PULL_SECRET_PATH=... make cluster.<name>.apply` (Make exports `TF_VAR_pull_secret_path`). Never commit the file. |
+| `pull_secret_path` | (empty) | Optional. Example profiles set `../tmp/pull-secret.txt` (gitignored). When set, Terraform writes Key Vault `redhat-pull-secret`. `PULL_SECRET_PATH` still overrides via Make. Never commit the file. |
 
 The jump public key is `clusters/<name>/jump.pub` (create with `make cluster.<name>.jump-key`); Make exports it as `TF_VAR_jump_ssh_public_key` when the file exists. It is not stored in `terraform.tfvars`.
 
@@ -160,8 +160,10 @@ Role assignments use VNet-scoped CAPI/CCM/ingress/image-registry (not subnet sco
 | GitOps CSV never Succeeded | Channel not in catalog for this OCP version | Bump `gitops/bootstrap/subscription.yaml` `channel` to the current `gitops-1.x` (see [GitOps guide](docs/guides/gitops.md)) |
 | GitOps bundle ImagePullBackOff `registry.redhat.io` | HCP pull secret is only the service ACR | `PULL_SECRET_PATH=<dockerconfigjson> make cluster.<name>.apply` stores it in Key Vault; `make cluster.<name>.bootstrap` creates `kube-system/additional-pull-secret` |
 | Duplicate GitOps / Web Terminal operators | Installed from Software Catalog as well as GitOps | Delete the extra Subscription; keep the GitOps-managed one |
+| Compliance Operator CSV stuck Installing; pod Pending `didn't match Pod's node affinity/selector` | CSV selects `node-role.kubernetes.io/master` (no masters on HCP) | Subscription `spec.config` in `gitops/operators/compliance/subscription.yaml` pins workers + `PLATFORM=HyperShift`; re-bootstrap or let Argo sync |
 | GitOps “Log in via OpenShift” / Dex connection refused | HCP has no in-cluster OAuth; default Dex `openShiftOAuth` is invalid | `make cluster.<name>.external-auth` then `make cluster.<name>.bootstrap` — login is Entra, not OpenShift |
 | GitOps `/auth/callback` blank (`named cookie not present`) | OAuth state cookie missing (embedded browser) **or** server still using Dex after SSO switch | Login in Chrome/Safari/Firefox; bootstrap restarts `openshift-gitops-server` after the OIDC patch |
+| `oc login --exec-plugin=oc-oidc` AADSTS7000218 (`client_secret` required) | Entra app is confidential-only; CLI is public PKCE | Re-run external-auth (enables public client flows + `http://localhost`); do not pass `--client-secret` |
 | GitOps sync: cannot patch `external-secrets-sa` | Default GitOps controller has no ServiceAccount patch; selfHeal fights Job/OpenShift annotations | Re-bootstrap (Application `ignoreDifferences` + `RespectIgnoreDifferences`). Do not grant the controller SA patch. |
 | `oc login` fails | Missing plugin | Use `oc` 4.20+ with `oc-oidc` |
 | Invalid redirect URI | Entra app mismatch | Re-run external-auth create |
