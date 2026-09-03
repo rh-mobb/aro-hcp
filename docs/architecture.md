@@ -11,6 +11,7 @@ Diagrams are [Mermaid](https://mermaid.js.org/) and render on GitHub.
 ## Contents
 
 - [Trust boundary](#trust-boundary)
+- [Network privacy](#network-privacy)
 - [Deploy pipeline](#deploy-pipeline)
 - [Operator permissions](#operator-permissions)
 - [Resultant resources](#resultant-resources)
@@ -78,6 +79,38 @@ flowchart TB
 ```
 
 Dashed lines are supporting or optional paths.
+
+## Network privacy
+
+**Rule:** Traffic this pattern owns must stay on **RFC1918** or **Azure Private Endpoints**. Anything that is not, or cannot be, needs an **approved, documented exception** in the table below **in the same change** that introduces it.
+
+ANF NFS (sibling) is the model to copy: a delegated subnet on the cluster VNet, volumes with private IPs, no Private Endpoint. Private Endpoint is required only when the Azure service has no VNet-native RFC1918 data path.
+
+`clusters/public` still defaults API and ingress to `Public` so the first deploy is reachable. That is an exception, not the philosophy. `clusters/private` is the philosophy-aligned profile.
+
+### Compliant (no exception)
+
+| Path | How it stays private |
+|------|----------------------|
+| Worker, pod, and service CIDRs | RFC1918 overlays in the customer VNet |
+| HCP VNet integration subnet | RFC1918; hosted control plane private connectivity into the customer VNet |
+| ANF NFS (sibling `modules/azure`) | Delegated subnet `10.0.3.0/24` (installer `netapp_subnet_prefix`). Volumes get VNet IPs. **Not** a Private Endpoint. |
+| Jump NIC | RFC1918 `10.0.2.0/28`. The public IP on that NIC is the exception below. |
+
+### Approved exceptions
+
+| Path | Why it is not RFC1918 / PE | Why it is allowed | How to tighten |
+|------|----------------------------|-------------------|----------------|
+| Cluster API (`api.visibility` default `Public`) | Public `*.aroapp-hcp.io` | Example profile `clusters/public`; create-time immutable | `api_visibility = Private` (`clusters/private`) |
+| Ingress / console (`ingress.type` default `Public`) | Public `*.apps` | Same | `ingress_visibility = Private` |
+| Node outbound (`outboundType = LoadBalancer`) | Public IP on the managed-RG load balancer | HCP preview default; nodes must pull images and reach Azure / Red Hat | Track platform support for private egress; do not treat this as RFC1918 |
+| Key Vault / etcd KMS (`kms.visibility: Public`) | Vault public network access; no PE or `privatelink.vaultcore.azure.net` | HCP customer-managed KMS consumes a public vault today | Demo Bicep can private-link the vault; this repo has not |
+| Jump box public IP | SSH from the operator network | Optional (`enable_jumpbox`); NSG sourced to `jump_ssh_source_prefix` | Bastion, PE jump, or an existing VNet path |
+| Microsoft Entra ID / Graph | SaaS, not VNet-injectable as RFC1918 | Identity plane for console OIDC | None; keep as exception |
+| Azure Resource Manager (Terraform, `az`, Trident CSI) | Public ARM HTTPS | Azure control plane | ARM Private Link is not in this pattern |
+| Image pulls, OperatorHub, GitOps `github.com` | Public HTTPS | Cluster must fetch payload and git | Private registry / GHES later; add a row if you keep them public |
+
+Do not add a public IP, public PaaS data plane, or internet listener without a new row here.
 
 ## Deploy pipeline
 
@@ -172,7 +205,7 @@ flowchart TB
 | **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG | Contributor can create RG, network, Key Vault, identities, and the HCP ARM resource. It **cannot** create role assignments. Terraform writes 28 operator assignments plus Key Vault Administrator for the deployer. That needs `Microsoft.Authorization/roleAssignments/write` (User Access Administrator or Owner). |
 | Resource providers registered | At minimum `Microsoft.RedHatOpenShift`. Terraform’s azurerm provider also auto-registers providers it uses (`Microsoft.Network`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.Authorization`). Registering a provider is a **subscription** action; RG-only Contributor cannot do it if the provider is not already registered. |
 | ARO HCP preview **allow-list** | Not an Azure role. The subscription must be enrolled for the preview or cluster create fails regardless of RBAC. |
-| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `location`. When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. |
+| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `location`. When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. `make cluster.<name>.virt-pool` adds **+16 vCPU** `Standard_D8s_v6`. |
 
 RG-scoped Owner / Contributor+UAA is enough for this repo because VNet, NSG, Key Vault, identities, and the cluster all live in one RG. A pre-existing VNet in another RG would also need UAA (or Owner) on that VNet.
 
@@ -344,9 +377,11 @@ Terraform resources live under [`modules/`](../modules/) (composed by [`terrafor
 | HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
 | Node pool | `np-1` | `azapi_resource.node_pool` | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms this resource first. |
 
-This reference **does not** create a private Key Vault, private endpoint, or `privatelink.vaultcore.azure.net` zone. The demo Bicep in `references/` can; this repo sets etcd KMS `visibility` to `Public`.
+This reference **does not** create a private Key Vault, private endpoint, or `privatelink.vaultcore.azure.net` zone. That is a documented [network privacy](#network-privacy) exception. The demo Bicep in `references/` can; this repo sets etcd KMS `visibility` to `Public`.
 
 ## Network
+
+See [Network privacy](#network-privacy) for the RFC1918 / Private Endpoint rule and the exception table.
 
 ```mermaid
 flowchart TB
@@ -389,6 +424,7 @@ flowchart TB
 | `10.0.0.0/24` | Worker subnet | Terraform `subnet_prefix`; cluster `platform.subnetId` |
 | `10.0.1.0/24` | VNet integration subnet | Terraform `vnet_integration_subnet_prefix`; cluster `platform.vnetIntegrationSubnetId` |
 | `10.0.2.0/28` | Jump subnet | Terraform `jump_subnet_prefix`; optional `enable_jumpbox` |
+| `10.0.3.0/24` | Reserved ANF delegated subnet | Terraform `netapp_subnet_prefix`. **Not created here.** Sibling virt/storage stack ([issue #16](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/16)) consumes this CIDR. NFS data plane is RFC1918 in-VNet (not a Private Endpoint). |
 | `10.128.0.0/14` | Pod CIDR | Terraform `pod_cidr` (ARM default) |
 | `172.30.0.0/16` | Service CIDR | Terraform `service_cidr` (ARM default) |
 
@@ -674,6 +710,18 @@ Child resource:
 
 OS disk is 64 GiB Standard SSD (`node_pool_disk_size_gib` / `node_pool_disk_storage_account_type`). Extra pools: `NAME=… REPLICAS=… VM_SIZE=… bash scripts/nodepool.sh create`.
 
+### OpenShift Virtualization workers (`clusters/aro-virt`)
+
+Microsoft supports CNV on ARO only on **Dsv5 / Dsv6 with 8+ cores** (Azure Boost). The default `np-1` (`Standard_D4s_v6`) stays for platform pods. Create the virt pool after apply:
+
+```bash
+make cluster.aro-virt.virt-pool
+# NAME=np-virt VM_SIZE=Standard_D8s_v6 REPLICAS=2
+# labels: workload=virtualization
+```
+
+Override with `VIRT_POOL_NAME`, `VIRT_POOL_VM_SIZE`, `VIRT_POOL_REPLICAS`, `VIRT_POOL_LABELS`. Then `make cluster.aro-virt.platform` and the sibling virt repo (`clusters/aro-virt`). Quota: **+16 vCPU** Dsv6. Destroy extra pools with `NAME=np-virt bash scripts/nodepool.sh delete` before cluster destroy, or let cluster ARM delete cascade them.
+
 Worker VMs and disks appear in the **managed** RG. Their NICs attach to `${cluster_name}-worker` (`my-cluster-worker` in the example).
 
 ## Managed resource group
@@ -811,6 +859,7 @@ stateDiagram-v2
 
 `make cluster.<name>.destroy` order:
 
+0. If a sibling ANF/Trident stack is attached, destroy **that** first (its cleanup script, then its terraform destroy). This installer does not call the sibling.
 1. `terraform state rm` default node pool — OCPBUGS-86702: RP rejects DELETE of the last pool
 2. `terraform destroy` — Entra app + `externalAuths/entra` (when Terraform owns them), cluster ARM delete (cascades remaining pools and the managed RG), then customer RG contents
 

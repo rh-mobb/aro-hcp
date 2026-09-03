@@ -10,7 +10,7 @@ GITOPS_DIR="${ROOT_DIR}/gitops"
 GITOPS_REPO="${GITOPS_REPO:-https://github.com/rh-mobb/validated-pattern-aro-hcp.git}"
 GITOPS_REVISION="${GITOPS_REVISION:-main}"
 # Argo Application path prefix. Default matches this repo. A cluster-config
-# repo (e.g. validated-pattern-aro-hcp-cluster-config) uses overlays/public|private.
+# repo (e.g. validated-pattern-aro-hcp-cluster-config) uses overlays/public|private|aro-virt.
 GITOPS_SOURCE_ROOT="${GITOPS_SOURCE_ROOT:-gitops/overlays}"
 GITOPS_WAIT_SECONDS="${GITOPS_WAIT_SECONDS:-900}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-${ROOT_DIR}/.kube/config}"
@@ -243,7 +243,7 @@ cmd_bootstrap() {
   overlay="$(overlay_name)"
   local overlay_dir="${GITOPS_DIR}/overlays/${overlay}"
   if [[ -z "${overlay}" || ! -d "${overlay_dir}" ]]; then
-    die "Unknown GitOps overlay '${overlay:-${CLUSTER:-}}' (expected ${overlay_dir}). Set GITOPS_OVERLAY=public or GITOPS_OVERLAY=private."
+    die "Unknown GitOps overlay '${overlay:-${CLUSTER:-}}' (expected ${overlay_dir}). Set GITOPS_OVERLAY=public, private, or aro-virt."
   fi
 
   if [[ "${GITOPS_DRY_RUN:-}" == "1" ]]; then
@@ -293,7 +293,7 @@ Install OpenShift GitOps, apply gitops/overlays/<profile>, plant the root Argo A
 
 Environment:
   CLUSTER              Profile directory under clusters/ (may not match an overlay name)
-  GITOPS_OVERLAY       Overlay directory (public, private, or a custom overlay)
+  GITOPS_OVERLAY       Overlay directory (public, private, aro-virt, or a custom overlay)
   GITOPS_REPO          Git URL (default: https://github.com/rh-mobb/validated-pattern-aro-hcp.git)
   GITOPS_REVISION      Branch/tag/commit (default: main)
   GITOPS_SOURCE_ROOT   Argo path prefix (default: gitops/overlays). Use overlays for validated-pattern-aro-hcp-cluster-config.

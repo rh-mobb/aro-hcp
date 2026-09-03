@@ -8,6 +8,24 @@ Customer-side **ARO HCP reference deployment**. Terraform provisions Azure prere
 
 This is **not** the Azure/ARO-HCP service codebase. Do not refactor `references/ARO-HCP/` or `references/bennerv-ARO-HCP/` (gitignored clones).
 
+## Sibling: OpenShift virt / RWX
+
+ANF + Trident (later CNV) is a **second IaC run**, not this root:
+
+| | This repo | Sibling [`validated-pattern-openshift-virt`](https://github.com/rh-mobb/validated-pattern-openshift-virt) |
+|--|-----------|--------------------------------------------------------------------------------------------------------|
+| Role | Cluster + GitOps baseline | `modules/azure` (delegated subnet, ANF pool, Trident identity) + GitOps Trident |
+| Canonical | `make cluster.<name>.apply` → kubeconfig → external-auth → bootstrap → **`platform`** | Second checkout; slim `terraform/` reads `platform.json` |
+| In-tree | Do **not** call the virt module from this `terraform/` | Deployers may `source = git::…//modules/azure?ref=<tag>` in *their* root |
+| Local co-dev | This checkout | Gitignored `references/validated-pattern-openshift-virt` (nested git repo; no submodule) |
+
+- Publish the contract with `make cluster.<name>.platform` (`clusters/<name>/platform.json`, gitignored).
+- Reserved ANF CIDR default **`10.0.3.0/24`** (`netapp_subnet_prefix`). Jump stays `10.0.2.0/28`. This repo does not create the NetApp subnet.
+- **Destroy sibling first** (Trident cleanup + ANF), then `make cluster.<name>.destroy`.
+- Do not implement ANF, Trident CRs, or CNV in this tree. Do not add a `make cluster.<name>.storage` that shells into `references/`.
+
+If the user asks only for RWX/virt storage, work in the sibling (or that `references/` clone). If they ask for a cluster, stay here.
+
 ## Source precedence
 
 When sources disagree:
@@ -21,9 +39,10 @@ When sources disagree:
 
 - **Do not** create the cluster via Terraform `local-exec` (AzAPI `azapi_resource` is the cluster path).
 - **Do not** copy subnet-scoped CAPI/CCM/ingress RBAC from older Bicep.
+- **Network privacy:** RFC1918 or Azure Private Endpoints only. If a path cannot comply, add a row to the exception table in [`docs/architecture.md`](docs/architecture.md#network-privacy) **in the same change**. Do not add public data-plane listeners or public PaaS by default. ANF NFS (sibling) is VNet-delegated RFC1918, not a Private Endpoint — that is compliant.
 - **`make` is the interface:** run `make fmt lint test` before claiming work is done.
 - **Docs and changelog:** keep [`docs/architecture.md`](docs/architecture.md) in sync with code; update [`CHANGELOG.md`](CHANGELOG.md) only at commit time (see below).
-- **Never commit:** operator `clusters/*/terraform.tfvars` (except committed examples), `clusters/*/infrastructure.tfstate*`, `config/cluster.env`, kubeconfig, Entra secrets, Red Hat pull secrets, downloaded `*.whl`.
+- **Never commit:** operator `clusters/*/terraform.tfvars` (except committed examples), `clusters/*/infrastructure.tfstate*`, `clusters/*/platform.json`, `config/cluster.env`, kubeconfig, Entra secrets, Red Hat pull secrets, downloaded `*.whl`.
 - **Live Azure:** do not `apply` / `destroy` unless the user asked. Follow [Live Azure deployments](#live-azure-deployments).
 - **Git:** feature branches only; Conventional Commits; no `Co-authored-by: Cursor` or AI trailers.
 
@@ -56,6 +75,8 @@ make cluster.my-cluster.apply               # terraform apply (cluster + node po
 make cluster.my-cluster.kubeconfig          # admin creds (24h TTL)
 make cluster.my-cluster.external-auth       # Entra + console (required for a usable console)
 make cluster.my-cluster.bootstrap    # optional: GitOps + Web Terminal + Compliance
+make cluster.my-cluster.virt-pool           # optional: Azure Boost D8s_v6 workers for CNV
+make cluster.my-cluster.platform            # gitignored platform.json for a sibling virt/storage stack
 make cluster.my-cluster.destroy             # reverse teardown (state-rm last pool, then terraform destroy)
 ```
 
@@ -70,7 +91,7 @@ Apply is **30–60+ minutes**. Destroy is irreversible for the customer RG. Do n
 ### Preflight (every apply or destroy)
 
 1. **Azure identity.** `az account show` — confirm subscription name/id and user. If missing or unexpected, stop and ask.
-2. **`clusters/<name>/terraform.tfvars`.** Must exist (copy from `clusters/public` or `clusters/private`). Treat it as the intended names, region, and versions. Never commit operator copies. `make cluster.<name>.plan` / `apply` / `destroy` pass `-var-file=clusters/<name>/terraform.tfvars` (beats leftover `TF_VAR_*` for keys in the file).
+2. **`clusters/<name>/terraform.tfvars`.** Must exist (copy from `clusters/public`, `clusters/private`, or `clusters/aro-virt`). Treat it as the intended names, region, and versions. Never commit operator copies. `make cluster.<name>.plan` / `apply` / `destroy` pass `-var-file=clusters/<name>/terraform.tfvars` (beats leftover `TF_VAR_*` for keys in the file).
 3. **`TF_VAR_*` leftovers — mandatory.** `-var-file` wins for keys in the cluster tfvars. Leftover `TF_VAR_*` that are **not** in the file (tags, CIDRs, disk size, etc.) still reach Terraform. Scripts after apply (`kubeconfig`, `external-auth`, CLI helpers) read **terraform outputs**, then fall back to the cluster tfvars; env overrides still win. `make test` does **not** pass the var-file and unsets mapped `TF_VAR_*` so CI uses Terraform defaults.
 
    List them:
@@ -100,7 +121,7 @@ Apply is **30–60+ minutes**. Destroy is irreversible for the customer RG. Do n
 
 ### Destroy
 
-`make cluster.<name>.destroy` state-rms the default node pool (OCPBUGS-86702) then `terraform destroy`. Always confirm subscription, RG, and cluster name with the user first.
+`make cluster.<name>.destroy` state-rms the default node pool (OCPBUGS-86702) then `terraform destroy`. Always confirm subscription, RG, and cluster name with the user first. If a sibling ANF/Trident stack exists, destroy **that** first (cleanup script + its terraform destroy); this destroy does not call the sibling.
 
 ### Do not
 
@@ -122,7 +143,7 @@ When a change affects deploy behavior or resultant Azure/Entra/OpenShift resourc
 - [`docs/guides/external-auth-entra-id.md`](docs/guides/external-auth-entra-id.md) — Entra OIDC, directory roles, consent.
 - [`docs/architecture.md`](docs/architecture.md) — resource inventory, diagrams, RBAC scopes, CIDRs, identity counts.
 - [`README.md`](README.md) — operator path: prerequisites summary, `make` targets, troubleshooting.
-- [`clusters/public/terraform.tfvars`](clusters/public/terraform.tfvars) — if a new required variable or default appears.
+- [`clusters/public/terraform.tfvars`](clusters/public/terraform.tfvars) — if a new required variable or default appears. Virt-ready example: [`clusters/aro-virt/terraform.tfvars`](clusters/aro-virt/terraform.tfvars).
 
 Do not leave architecture docs describing the previous identity set, role assignment scopes, network layout, or permission requirements.
 

@@ -10,7 +10,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") <create|show|update|delete|list> [options]
 
-Overrides: NAME= REPLICAS= VM_SIZE= VERSION= CHANNEL=
+Overrides: NAME= REPLICAS= VM_SIZE= VERSION= CHANNEL= LABELS= TAINTS=
 EOF
 }
 
@@ -23,6 +23,9 @@ cmd_create() {
   local vm_size="${VM_SIZE:-${NODEPOOL_VM_SIZE}}"
   local version="${VERSION:-${NODEPOOL_VERSION:-${CLUSTER_VERSION}}}"
   local channel="${CHANNEL:-${NODEPOOL_CHANNEL}}"
+  local labels="${LABELS:-}"
+  local taints="${TAINTS:-}"
+  local -a extra=()
 
   if nodepool_exists "${name}"; then
     log "Node pool ${name} already exists; skipping create"
@@ -31,15 +34,34 @@ cmd_create() {
 
   cluster_exists || die "Cluster ${CLUSTER_NAME} does not exist"
 
+  if [[ -n "${labels}" ]]; then
+    extra+=(--labels "${labels}")
+  fi
+  if [[ -n "${taints}" ]]; then
+    extra+=(--taints "${taints}")
+  fi
+
   log "Creating node pool ${name}"
-  az aro hcp cluster nodepool create \
-    --resource-group "${RESOURCE_GROUP}" \
-    --cluster-name "${CLUSTER_NAME}" \
-    --name "${name}" \
-    --replicas "${replicas}" \
-    --vm-size "${vm_size}" \
-    --version "${version}" \
-    --channel-group "${channel}"
+  if ((${#extra[@]} > 0)); then
+    az aro hcp cluster nodepool create \
+      --resource-group "${RESOURCE_GROUP}" \
+      --cluster-name "${CLUSTER_NAME}" \
+      --name "${name}" \
+      --replicas "${replicas}" \
+      --vm-size "${vm_size}" \
+      --version "${version}" \
+      --channel-group "${channel}" \
+      "${extra[@]}"
+  else
+    az aro hcp cluster nodepool create \
+      --resource-group "${RESOURCE_GROUP}" \
+      --cluster-name "${CLUSTER_NAME}" \
+      --name "${name}" \
+      --replicas "${replicas}" \
+      --vm-size "${vm_size}" \
+      --version "${version}" \
+      --channel-group "${channel}"
+  fi
 }
 
 cmd_show() {

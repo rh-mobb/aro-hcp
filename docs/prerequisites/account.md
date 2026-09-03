@@ -20,6 +20,7 @@ Layer **0** — required before any `make cluster.<name>.*` command that touches
 |----------|---------|--------------|
 | Default node pool | `Standard_D4s_v6` × 2 replicas | **8 vCPU** in `location` |
 | Optional jump box | `Standard_D2s_v6` × 1 | **+2 vCPU** when `enable_jumpbox = true` |
+| Virt pool (`clusters/aro-virt`) | `Standard_D8s_v6` × 2 (`make cluster.<name>.virt-pool`) | **+16 vCPU** Standard Dsv6. [Microsoft: CNV on ARO](https://learn.microsoft.com/en-us/azure/openshift/howto-create-openshift-virtualization) requires Dsv5/Dsv6 **8+ cores** (Azure Boost). |
 | Extra node pools | `scripts/nodepool.sh` | Add replicas × SKU vCPU per pool |
 
 Check quota:

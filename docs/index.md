@@ -14,6 +14,8 @@ This repository uses reusable Terraform modules and a **directory-per-cluster** 
 | Configure Entra console OIDC | [External Auth with Entra ID](guides/external-auth-entra-id.md) |
 | Bootstrap GitOps and day-2 operators | [GitOps bootstrap](guides/gitops.md) |
 | Inspect Azure resources, RBAC scopes, and diagrams | [Architecture](architecture.md) |
+| Network privacy (RFC1918 / Private Endpoints) | [Architecture — Network privacy](architecture.md#network-privacy) |
+| Attach ANF + Trident (sibling repo) | [Architecture](architecture.md) reserved CIDR `10.0.3.0/24`; `make cluster.<name>.platform`; [issue #16](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/16) |
 | Choose cluster profiles (public vs private) | [Cluster configurations](../clusters/README.md) |
 
 ## Architecture at a glance
@@ -43,7 +45,8 @@ flowchart TB
 | Profile | Example directory | Typical use |
 |---------|-------------------|-------------|
 | Public API + ingress | `clusters/public/` | Development, public console |
-| Private API + ingress + jump | `clusters/private/` | Private endpoints, sshuttle via jump box |
+| Private API + ingress + jump | `clusters/private/` | RFC1918 API/ingress into the VNet; sshuttle via jump box |
+| ARO + OpenShift Virtualization | `clusters/aro-virt/` | Same as public, plus `make cluster.aro-virt.virt-pool` (Dsv6 Azure Boost, 8+ cores) and sibling ANF/CNV |
 
 ## Local preview
 

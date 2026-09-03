@@ -92,6 +92,12 @@ EOF
   [[ "$output" == *"path: gitops/overlays/private"* ]]
 }
 
+@test "gitops dry-run aro-virt overlay plants Application path" {
+  CLUSTER=aro-virt run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"path: gitops/overlays/aro-virt"* ]]
+}
+
 @test "gitops dry-run honors GITOPS_REPO and GITOPS_REVISION" {
   GITOPS_REPO=https://example.com/fork.git GITOPS_REVISION=feat/gitops \
     run bash "${BATS_TEST_DIRNAME}/../../scripts/gitops-bootstrap.sh" bootstrap

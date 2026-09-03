@@ -22,7 +22,7 @@ make cluster.public.apply
 | Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, console secret / CRBs |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
-Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `NAME=np-2 bash scripts/nodepool.sh create`.
+Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `make cluster.aro-virt.virt-pool` or `NAME=np-2 bash scripts/nodepool.sh create`.
 
 ## Prerequisites
 
@@ -90,6 +90,7 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
 | `make cluster.<name>.external-auth` | Console secret + `cluster-admin` CRB (app already created by Terraform unless `enable_external_auth = false`) |
 | `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional). Point Argo at a [cluster-config repo](docs/guides/gitops.md#cluster-config-repo) with `GITOPS_REPO` + `GITOPS_SOURCE_ROOT=overlays`. |
+| `make cluster.<name>.platform` | Write gitignored `clusters/<name>/platform.json` for a sibling virt/storage stack ([issue #16](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/16)). |
 | `make cluster.<name>.external-auth-delete` | Remove in-cluster console secret (does not delete the Terraform Entra app) |
 
 ## Configuration
@@ -106,6 +107,7 @@ Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfv
 | `enable_external_auth` | `true` | Entra app + `externalAuths/entra` after cluster DNS is known. |
 | `oidc_web_redirects` | `{ rhoai = { host = "rh-ai", path = "/oauth2/callback" } }` | Extra Web callbacks. Console, GitOps, and PKCE are always registered. Set `{}` for none. |
 | `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
+| `netapp_subnet_prefix` | `10.0.3.0/24` | Reserved CIDR for a sibling Azure NetApp Files subnet. **Not created here.** Must not overlap worker, integration, or jump (`10.0.2.0/28`). |
 | `pull_secret_path` | (empty) | Optional. Example profiles set `../tmp/pull-secret.txt` (gitignored). When set, Terraform writes Key Vault `redhat-pull-secret`. `PULL_SECRET_PATH` still overrides via Make. Never commit the file. |
 
 The jump public key is `clusters/<name>/jump.pub` (create with `make cluster.<name>.jump-key`); Make exports it as `TF_VAR_jump_ssh_public_key` when the file exists. It is not stored in `terraform.tfvars`.
@@ -204,7 +206,7 @@ oc get co csi-snapshot-controller
 
 ## Local references
 
-The `references/` folder may contain cloned ARO-HCP repos and hackathon guides (gitignored clones). These are **source material only**, not deployed.
+The `references/` folder may contain cloned ARO-HCP repos, hackathon guides, and an optional `validated-pattern-openshift-virt` checkout (gitignored). These are **source material only**, not deployed. Canonical virt/storage install is a second GitHub checkout, not this folder.
 
 ## Optional: remote Terraform state
 

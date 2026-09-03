@@ -19,6 +19,7 @@ config/jump.pub
 *.tfvars
 !clusters/public/terraform.tfvars
 !clusters/private/terraform.tfvars
+!clusters/aro-virt/terraform.tfvars
 
 # Per-cluster operator artifacts
 clusters/*/infrastructure.tfstate*
@@ -28,6 +29,7 @@ clusters/*/jump
 clusters/*/jump.pub
 clusters/*/operator-hosts.snippet
 clusters/*/sshuttle.pid
+clusters/*/platform.json
 
 # Kubeconfig and CLI artifacts
 .kube/

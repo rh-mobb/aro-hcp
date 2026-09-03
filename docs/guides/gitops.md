@@ -97,6 +97,8 @@ See [Who is cluster-admin](external-auth-entra-id.md#who-is-cluster-admin). Do n
 
 If the cluster-config repo is private, add it as a GitOps repository credential. Bootstrap still `oc apply -k`s the **local** installer overlay so operators exist before Argo can clone.
 
+Trident / Azure NetApp Files / OpenShift Virtualization is **not** in this `gitops/` tree. That is a sibling stack: `make cluster.<name>.platform` then the virt/storage repo. Use installer profile [`clusters/aro-virt`](../../clusters/aro-virt/) (`make cluster.aro-virt.virt-pool` for Azure Boost D8s_v6 workers).
+
 ## OperatorHub
 
 Software Catalog / Installed Operators still speak OLM Classic, which is why this tree uses `Subscription`s (they show as installed). Do **not** also install the same operators from the catalog — a second Subscription fights the GitOps-managed one.
@@ -116,7 +118,7 @@ gitops/
   operators/compliance/
   operators/external-secrets/  # RH ESO + metadata Job (no per-cluster IDs in git)
   base/                      # bootstrap + operators
-  overlays/public|private    # same baseline today; diverge later
+  overlays/public|private|aro-virt    # same operator baseline today; aro-virt is the virt-ready profile name
   argocd/root-application.yaml
 ```
 

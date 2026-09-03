@@ -7,7 +7,8 @@ Each directory under `clusters/` represents one ARO HCP deployment. Example prof
 | Directory | Profile |
 |-----------|---------|
 | [`public/`](public/) | Public API and ingress; no jump box |
-| [`private/`](private/) | Private API and ingress; jump box enabled |
+| [`private/`](private/) | Private API and ingress (RFC1918 into the VNet); jump box enabled |
+| [`aro-virt/`](aro-virt/) | Public API; reserved ANF CIDR; extra Azure Boost virt pool (`make cluster.aro-virt.virt-pool`) |
 
 ## Usage
 
@@ -43,6 +44,7 @@ Per cluster (gitignored for operator dirs):
 
 - `infrastructure.tfstate` — Terraform state (`terraform init -backend-config=...`)
 - `.terraform/` — provider cache (`TF_DATA_DIR`)
+- `platform.json` — written by `make cluster.<name>.platform` for a sibling virt/storage stack
 - `jump` / `jump.pub` — SSH keypair for the jump VM (when enabled)
 
 Never commit state files, private keys, kubeconfig, or Red Hat pull secrets.

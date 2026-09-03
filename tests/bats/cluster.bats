@@ -62,6 +62,17 @@ EOF
   [[ "$output" == *"already exists"* ]]
 }
 
+@test "nodepool create extra virt pool passes Azure Boost SKU and labels" {
+  AZ_NODEPOOL_EXISTS=0 NAME=np-virt VM_SIZE=Standard_D8s_v6 REPLICAS=2 \
+    LABELS='[{key:workload,value:virtualization}]' \
+    run bash "${BATS_TEST_DIRNAME}/../../scripts/nodepool.sh" create
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"created"* ]]
+  [[ "$output" == *"Standard_D8s_v6"* ]]
+  [[ "$output" == *"np-virt"* ]]
+  [[ "$output" == *"workload"* ]]
+}
+
 @test "cluster delete is no-op when cluster missing" {
   AZ_CLUSTER_EXISTS=0 run bash "${BATS_TEST_DIRNAME}/../../scripts/cluster.sh" delete
   [ "$status" -eq 0 ]

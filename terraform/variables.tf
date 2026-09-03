@@ -68,6 +68,12 @@ variable "jump_subnet_prefix" {
   default     = "10.0.2.0/28"
 }
 
+variable "netapp_subnet_prefix" {
+  description = "Reserved CIDR for a sibling Azure NetApp Files delegated subnet (not created here). Default 10.0.3.0/24; must not overlap worker, integration, or jump."
+  type        = string
+  default     = "10.0.3.0/24"
+}
+
 variable "enable_jumpbox" {
   description = "Create a Fedora jump VM with a public IP for sshuttle."
   type        = bool

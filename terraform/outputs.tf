@@ -186,3 +186,64 @@ output "jump_ssh_user" {
 output "jump_sshuttle_command" {
   value = var.enable_jumpbox ? module.jumpbox[0].sshuttle_command : null
 }
+
+output "vnet_name" {
+  value = module.network.vnet_name
+}
+
+output "worker_subnet_name" {
+  value = module.network.worker_subnet_name
+}
+
+output "worker_subnet_prefix" {
+  value = module.network.worker_subnet_prefix
+}
+
+output "address_prefix" {
+  value = module.network.address_prefix
+}
+
+output "jump_subnet_prefix" {
+  description = "Jump subnet CIDR from tfvars (reserved even when enable_jumpbox is false)."
+  value       = var.jump_subnet_prefix
+}
+
+output "netapp_subnet_prefix" {
+  description = "Reserved ANF delegated-subnet CIDR. Not created in this root; sibling module consumes it."
+  value       = var.netapp_subnet_prefix
+}
+
+output "platform" {
+  description = "Versioned contract for a sibling virt/storage stack (terraform output -json platform)."
+  value = {
+    contract_version    = 1
+    subscription_id     = data.azurerm_client_config.current.subscription_id
+    tenant_id           = module.identities.tenant_id
+    location            = module.network.location
+    cluster_name        = var.cluster_name
+    cluster_id          = module.cluster.cluster_id
+    resource_group_name = module.network.resource_group_name
+    network = {
+      vnet_id              = module.network.vnet_id
+      vnet_name            = module.network.vnet_name
+      address_prefix       = module.network.address_prefix
+      worker_subnet_id     = module.network.worker_subnet_id
+      worker_subnet_name   = module.network.worker_subnet_name
+      worker_subnet_prefix = module.network.worker_subnet_prefix
+      nsg_id               = module.network.nsg_id
+      jump_subnet_prefix   = var.jump_subnet_prefix
+      reserved = {
+        netapp_subnet_prefix = var.netapp_subnet_prefix
+      }
+    }
+    oidc_issuer_url   = module.cluster.oidc_issuer_url
+    key_vault_id      = module.identities.key_vault_id
+    key_vault_name    = module.identities.key_vault_name
+    key_vault_uri     = module.identities.key_vault_uri
+    eso_client_id     = module.identities.eso_client_id
+    api_url           = module.cluster.api_url
+    api_visibility    = var.api_visibility
+    cluster_version   = var.cluster_version
+    node_pool_version = var.node_pool_version
+  }
+}

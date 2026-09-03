@@ -19,6 +19,9 @@ enable_jumpbox = true
 # Required when enable_jumpbox is true. SSH 22 from this CIDR only (use your /32).
 # jump_ssh_source_prefix = "1.2.3.4/32"
 
+# Reserved CIDR for a sibling ANF delegated subnet (not created here). Default 10.0.3.0/24.
+# netapp_subnet_prefix = "10.0.3.0/24"
+
 # Red Hat pull secret for OperatorHub (GitOps bootstrap). Relative paths are
 # resolved from terraform/. The file is gitignored (tmp/ and pull-secret.txt).
 pull_secret_path = "../tmp/pull-secret.txt"
