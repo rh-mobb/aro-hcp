@@ -12,7 +12,7 @@ Site home: [index.md](index.md). Start with [Prerequisites](prerequisites/index.
 | [Quick start](getting-started/quick-start.md) | Deploy the `clusters/public` example |
 | [External auth with Entra ID](guides/external-auth-entra-id.md) | Console OIDC, directory roles, consent, RBAC |
 | [GitOps bootstrap](guides/gitops.md) | Optional OpenShift GitOps + operator baseline |
-| [Architecture](architecture.md) | Resultant Azure/Entra/OpenShift resources, RBAC scopes, diagrams |
+| [Architecture](architecture.md) | Resultant Azure/Entra/OpenShift resources, RBAC scopes, diagrams, [network privacy](architecture.md#network-privacy) |
 
 ## Permission model (summary)
 

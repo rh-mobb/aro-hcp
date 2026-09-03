@@ -22,6 +22,7 @@ You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `c
    ```bash
    cp -r clusters/public clusters/my-cluster
    # or clusters/private for private API/ingress + jump box
+   # or clusters/aro-virt for CNV-ready workers + reserved ANF CIDR (then sibling repo)
    ```
 
 3. When `enable_jumpbox = true`:
@@ -36,6 +37,7 @@ You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `c
 |---------|-----------|--------------|
 | Public API + ingress | [`clusters/public/`](../../clusters/public/) | `api_visibility = "Public"`, `ingress_visibility = "Public"`, `enable_jumpbox = false` |
 | Private API + ingress + jump | [`clusters/private/`](../../clusters/private/) | `api_visibility = "Private"`, `ingress_visibility = "Private"`, `enable_jumpbox = true`, set `jump_ssh_source_prefix` |
+| ARO + OpenShift Virtualization | [`clusters/aro-virt/`](../../clusters/aro-virt/) | Public API; `node_pools.np-virt` D8s_v6; reserved ANF CIDR. Full path: [Virt stack](../guides/virt-stack.md) |
 
 ## Deployment workflow
 
@@ -62,6 +64,8 @@ Teardown:
 
 ```bash
 make cluster.<name>.external-auth-delete   # in-cluster console secret only when TF owns Entra
+# If a sibling ANF/Trident stack is attached, destroy it first (cleanup + terraform destroy).
+# See guides/virt-stack.md — leftover ANF volumes block terraform destroy of the pool.
 make cluster.<name>.destroy
 ```
 
@@ -90,7 +94,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | Retry console OAuth secret | `cluster.<name>.console-secret` | None | App credential reset if re-running | **cluster-admin** kubeconfig + sshuttle for private API |
 | GitOps + operator baseline | `cluster.<name>.bootstrap` | **Key Vault Secrets User** (or deployer Key Vault Administrator) to `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set | None | **cluster-admin** kubeconfig; sshuttle if API is private |
 | Destroy | `cluster.<name>.destroy` | Same as **apply** | Deletes Terraform-managed Entra app | Optional admin kubeconfig if deleting console secret |
-| Extra node pool | `scripts/nodepool.sh create` | **Contributor** on cluster (`nodePools` write) | None | None |
+| Extra node pool | `node_pools` in tfvars (Terraform) or `scripts/nodepool.sh create` | **Contributor** on cluster (`nodePools` write) | None | None |
 
 ### Azure RBAC detail by target
 
@@ -152,7 +156,11 @@ Installs OpenShift GitOps, publishes `aro-platform-metadata`, and syncs [`gitops
 
 #### `make cluster.<name>.destroy`
 
-Same Azure permissions as **apply** (delete resources, including the Entra app). `external-auth-delete` only removes the in-cluster console secret when Terraform owns Entra.
+Same Azure permissions as **apply** (delete resources, including the Entra app). `external-auth-delete` only removes the in-cluster console secret when Terraform owns Entra. Destroy any sibling ANF/Trident stack first; this target does not call it.
+
+#### `make cluster.<name>.platform`
+
+Reads Terraform outputs only (**Reader** on existing state). Writes gitignored `clusters/<name>/platform.json` for a sibling virt/storage stack. No extra Azure rights.
 
 ### Optional: custom Azure roles
 

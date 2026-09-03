@@ -97,6 +97,8 @@ See [Who is cluster-admin](external-auth-entra-id.md#who-is-cluster-admin). Do n
 
 If the cluster-config repo is private, add it as a GitOps repository credential. Bootstrap still `oc apply -k`s the **local** installer overlay so operators exist before Argo can clone.
 
+Trident / Azure NetApp Files / OpenShift Virtualization is **not** in this `gitops/` tree. That is a sibling stack: `make cluster.<name>.platform` then the virt/storage repo. Full command sequence: [Virt stack](virt-stack.md). Use installer profile [`clusters/aro-virt`](../../clusters/aro-virt/) (`node_pools.np-virt` for Azure Boost D8s_v6 workers). The sibling overlay binds `cluster-admin` to `openshift-gitops-argocd-application-controller` so Argo can create Trident ServiceAccounts, `VolumeSnapshotClass`, `TridentOrchestrator`, and `HyperConverged`. This installer’s baseline keeps the default least-privilege GitOps ClusterRole (ESO ignores ServiceAccount drift instead).
+
 ## OperatorHub
 
 Software Catalog / Installed Operators still speak OLM Classic, which is why this tree uses `Subscription`s (they show as installed). Do **not** also install the same operators from the catalog — a second Subscription fights the GitOps-managed one.
@@ -116,7 +118,7 @@ gitops/
   operators/compliance/
   operators/external-secrets/  # RH ESO + metadata Job (no per-cluster IDs in git)
   base/                      # bootstrap + operators
-  overlays/public|private    # same baseline today; diverge later
+  overlays/public|private|aro-virt    # same operator baseline today; aro-virt is the virt-ready profile name
   argocd/root-application.yaml
 ```
 
@@ -126,6 +128,7 @@ Bootstrap needs a **cluster-admin** kubeconfig (`make cluster.<name>.kubeconfig`
 
 ## Related
 
+- [Virt stack](virt-stack.md) — ARO HCP + ANF + OpenShift Virtualization
 - [Issue #9](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/9)
 - [Full-stack deployment](../prerequisites/full-stack.md)
 - [Architecture](../architecture.md)

@@ -90,6 +90,10 @@ make cluster.my-private.external-auth
 
 Teardown for private also removes the customer Private DNS zone (`private-dns-delete` runs automatically from `destroy`).
 
+## OpenShift Virtualization
+
+Use [`clusters/aro-virt`](../../clusters/aro-virt/) plus the sibling virt/storage repo (ANF + Trident + CNV). That is a **second IaC run**, not this apply. Full command sequence, verify, and destroy: [Virt stack](../guides/virt-stack.md). Extra quota: **+16 vCPU** Dsv6 and ANF capacity.
+
 ## Teardown
 
 ```bash
@@ -97,10 +101,13 @@ make cluster.my-cluster.external-auth-delete
 make cluster.my-cluster.destroy
 ```
 
+If a sibling ANF/Trident stack is attached, [destroy it first](../guides/virt-stack.md#4-destroy).
+
 For private clusters, run `make cluster.<name>.sshuttle.connect` before `external-auth-delete` if `oc` cannot reach the API. Run `make cluster.<name>.sshuttle.disconnect` when finished.
 
 ## Related
 
 - [Full-stack deployment](../prerequisites/full-stack.md) — permissions per step
+- [Virt stack](../guides/virt-stack.md) — ARO HCP + ANF + OpenShift Virtualization
 - [Architecture](../architecture.md) — resource inventory
 - [Cluster configurations](../../clusters/README.md)

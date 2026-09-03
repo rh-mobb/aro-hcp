@@ -17,7 +17,7 @@ export TF_DATA_DIR := $(abspath $(CLUSTER_DIR)/.terraform)
 # GNU Make exports recipe variables; do not let the profile name shadow scripts' CLUSTER_NAME.
 unexport CLUSTER_NAME
 
-.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions setup bootstrap private-dns private-dns-delete
+.PHONY: check-cluster check-tfvars jump-pub-check init plan apply destroy kubeconfig revoke-credentials external-auth external-auth-delete console-secret jump-key jump sshuttle.connect sshuttle.disconnect sshuttle.status versions setup bootstrap platform private-dns private-dns-delete
 
 check-cluster:
 	@test -d "$(CLUSTER_DIR)" || (echo "Missing cluster directory $(CLUSTER_DIR). See clusters/README.md" >&2; exit 1)
@@ -71,6 +71,10 @@ setup:
 bootstrap: setup kubeconfig
 	@export TFVARS="$(TFVARS)"; \
 	bash $(SCRIPTS)/gitops-bootstrap.sh bootstrap
+
+platform: check-tfvars init
+	@export TFVARS="$(TFVARS)"; \
+	bash $(SCRIPTS)/platform.sh
 
 kubeconfig: setup check-tfvars
 	@export TFVARS="$(TFVARS)"; \

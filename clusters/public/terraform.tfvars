@@ -16,12 +16,21 @@ cluster_name = "my-cluster"
 cluster_version = "4.22"
 cluster_channel = "stable"
 
-# Default node pool
-node_pool_name     = "np-1"
-node_pool_replicas = 2
-node_pool_vm_size  = "Standard_D4s_v6"
-node_pool_version  = "4.22.9"
-node_pool_channel  = "stable"
+# Default node pool (np-1). Extra pools belong in node_pools.
+# Fields match az aro hcp cluster nodepool create (labels, taints, autoscaling,
+# disk, encryption-at-host, auto-repair, drain timeout, subnet_id).
+# availability_zone is Azure zone 1/2/3 (not uksouth-1). Omit to leave unpinned.
+# Optional CLI flags (subnet_id, disk_*, auto_repair, taints, …) are omitted from ARM when unset.
+node_pool_version = "4.22.9"
+node_pool_channel = "stable"
+
+node_pools = {
+  np-1 = {
+    vm_size           = "Standard_D4s_v6"
+    replicas          = 2
+    availability_zone = "1"
+  }
+}
 
 # Create-time only; cannot change in place.
 api_visibility     = "Public"
@@ -31,6 +40,10 @@ ingress_visibility = "Public"
 enable_jumpbox = false
 # Required when enable_jumpbox is true. SSH 22 from this CIDR only (use your /32).
 # jump_ssh_source_prefix = "1.2.3.4/32"
+
+# Reserved CIDR for a sibling ANF delegated subnet (not created here). Default 10.0.3.0/24.
+# Must not overlap worker 10.0.0.0/24, integration 10.0.1.0/24, or jump 10.0.2.0/28.
+# netapp_subnet_prefix = "10.0.3.0/24"
 
 # Red Hat pull secret for OperatorHub (GitOps bootstrap). Relative paths are
 # resolved from terraform/. The file is gitignored (tmp/ and pull-secret.txt).

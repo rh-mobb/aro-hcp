@@ -11,6 +11,7 @@ This reference implements **full-stack deployment**: one platform team runs Terr
 | **0 — Account** | Subscription allow-list, RBAC baseline, quotas, tools | [Account prerequisites](account.md) |
 | **1 — Full-stack** | `clusters/<name>/terraform.tfvars` + `make cluster.<name>.*` | [Full-stack deployment](full-stack.md) |
 | **2 — Console OIDC** | Entra app + external-auth (after kubeconfig) | [External auth with Entra ID](../guides/external-auth-entra-id.md) |
+| **3 — Virt / RWX** | Second checkout: ANF + Trident + CNV | [Virt stack](../guides/virt-stack.md) |
 
 Bring-your-own network or identities (pre-provisioned VNet, separate security team) is not a first-class module split in this repo. If you reuse existing Azure objects, extend RBAC at those scopes — see [Account prerequisites — scope](account.md#rbac-scope-and-least-privilege).
 

@@ -69,19 +69,261 @@ run "node_pool_is_cluster_child" {
   command = plan
 
   assert {
-    condition     = azapi_resource.node_pool.type == "Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools@2026-06-30-preview"
+    condition     = azapi_resource.node_pool["np-1"].type == "Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools@2026-06-30-preview"
     error_message = "Node pool AzAPI type must be hcpOpenShiftClusters/nodePools@2026-06-30-preview."
   }
 
   assert {
-    condition     = azapi_resource.node_pool.schema_validation_enabled == false
+    condition     = azapi_resource.node_pool["np-1"].schema_validation_enabled == false
     error_message = "Preview node pool AzAPI resource must set schema_validation_enabled = false."
   }
 
   assert {
-    condition     = azapi_resource.node_pool.name == var.node_pool_name
-    error_message = "Default node pool name must come from node_pool_name."
+    condition     = azapi_resource.node_pool["np-1"].name == "np-1"
+    error_message = "Default node pool name must be the node_pools map key."
   }
+
+  assert {
+    condition     = length(azapi_resource.node_pool) == 1
+    error_message = "Default node_pools must create exactly np-1."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-1"].body.properties.platform.availabilityZone == "1"
+    error_message = "Default np-1 must pin workers to Azure availability zone 1."
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.platform.subnetId, null) == null
+    error_message = "Omitting subnet_id must leave platform.subnetId unset (nil); do not inject the worker subnet."
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.autoRepair, null) == null
+    error_message = "Omitting auto_repair must leave properties.autoRepair unset."
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.platform.osDisk, null) == null
+    error_message = "Omitting disk fields must leave platform.osDisk unset."
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.platform.enableEncryptionAtHost, null) == null
+    error_message = "Omitting encryption_at_host must leave platform.enableEncryptionAtHost unset."
+  }
+}
+
+run "additional_node_pool_is_cluster_child_with_labels" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size           = "Standard_D4s_v6"
+        replicas          = 2
+        availability_zone = "1"
+      }
+      np-virt = {
+        vm_size           = "Standard_D8s_v6"
+        replicas          = 2
+        availability_zone = "1"
+        labels = {
+          workload = "virtualization"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition     = length(azapi_resource.node_pool) == 2
+    error_message = "node_pools must create one AzAPI nodePools child per map key."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-virt"].name == "np-virt"
+    error_message = "Extra node pool ARM name must be the node_pools map key."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-virt"].body.properties.platform.vmSize == "Standard_D8s_v6"
+    error_message = "np-virt must use Standard_D8s_v6."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-virt"].body.properties.labels[0].key == "workload" && azapi_resource.node_pool["np-virt"].body.properties.labels[0].value == "virtualization"
+    error_message = "np-virt labels must be an ARM list of {key,value} matching the CLI."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-1"].body.properties.platform.availabilityZone == "1"
+    error_message = "np-1 must pin workers to Azure availability zone 1."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-virt"].body.properties.platform.availabilityZone == "1"
+    error_message = "np-virt must pin workers to Azure availability zone 1."
+  }
+}
+
+run "node_pool_maps_cli_fields" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size  = "Standard_D4s_v6"
+        replicas = 2
+      }
+      np-gpu = {
+        vm_size                   = "Standard_D8s_v6"
+        min_replicas              = 2
+        max_replicas              = 6
+        availability_zone         = "2"
+        subnet_id                 = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/extra"
+        disk_size_gib             = 128
+        disk_storage_account_type = "Premium_LRS"
+        disk_type                 = "Ephemeral"
+        disk_encryption_set       = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des"
+        encryption_at_host        = true
+        auto_repair               = false
+        node_drain_timeout        = 30
+        labels = {
+          dedicated = "gpu"
+        }
+        taints = [{
+          key    = "dedicated"
+          value  = "gpu"
+          effect = "NoSchedule"
+        }]
+      }
+    }
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-gpu"].body.properties.replicas, null) == null
+    error_message = "Autoscaling pools must omit replicas (CLI: cannot use with --min-replicas/--max-replicas)."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.autoScaling.min == 2 && azapi_resource.node_pool["np-gpu"].body.properties.autoScaling.max == 6
+    error_message = "min_replicas/max_replicas must map to properties.autoScaling min/max."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.platform.subnetId == "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/extra"
+    error_message = "subnet_id must override the cluster worker subnet (CLI --subnet-id)."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.platform.enableEncryptionAtHost == true
+    error_message = "encryption_at_host must map to platform.enableEncryptionAtHost."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.platform.osDisk.diskType == "Ephemeral" && azapi_resource.node_pool["np-gpu"].body.properties.platform.osDisk.encryptionSetId == "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/diskEncryptionSets/des" && azapi_resource.node_pool["np-gpu"].body.properties.platform.osDisk.sizeGiB == 128 && azapi_resource.node_pool["np-gpu"].body.properties.platform.osDisk.diskStorageAccountType == "Premium_LRS"
+    error_message = "OS disk CLI flags must map to platform.osDisk."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.autoRepair == false
+    error_message = "auto_repair must map to properties.autoRepair."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.nodeDrainTimeoutMinutes == 30
+    error_message = "node_drain_timeout must map to properties.nodeDrainTimeoutMinutes."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.taints[0].key == "dedicated" && azapi_resource.node_pool["np-gpu"].body.properties.taints[0].effect == "NoSchedule"
+    error_message = "taints must map to properties.taints {key,value,effect}."
+  }
+
+  assert {
+    condition     = azapi_resource.node_pool["np-gpu"].body.properties.platform.availabilityZone == "2"
+    error_message = "np-gpu must pin Azure availability zone 2."
+  }
+}
+
+run "node_pool_rejects_partial_autoscaling" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size      = "Standard_D4s_v6"
+        min_replicas = 2
+      }
+    }
+  }
+
+  expect_failures = [
+    var.node_pools,
+  ]
+}
+
+run "node_pool_taint_effect_must_be_valid" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size  = "Standard_D4s_v6"
+        replicas = 2
+        taints = [{
+          key    = "dedicated"
+          value  = "gpu"
+          effect = "NoSchedulePlease"
+        }]
+      }
+    }
+  }
+
+  expect_failures = [
+    var.node_pools,
+  ]
+}
+
+run "omitted_availability_zone_is_unpinned" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size  = "Standard_D4s_v6"
+        replicas = 2
+      }
+    }
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.platform.availabilityZone, null) == null
+    error_message = "Omitting availability_zone must leave the pool unpinned (no platform.availabilityZone)."
+  }
+
+  assert {
+    condition     = try(azapi_resource.node_pool["np-1"].body.properties.platform.subnetId, null) == null
+    error_message = "Omitting subnet_id must leave platform.subnetId unset."
+  }
+}
+
+run "availability_zone_must_be_azure_zone_number" {
+  command = plan
+
+  variables {
+    node_pools = {
+      np-1 = {
+        vm_size           = "Standard_D4s_v6"
+        replicas          = 2
+        availability_zone = "uksouth-1"
+      }
+    }
+  }
+
+  expect_failures = [
+    var.node_pools,
+  ]
 }
 
 run "hcp_cluster_api_visibility_defaults_public" {
@@ -136,7 +378,7 @@ run "node_pool_version_must_be_enabled" {
   }
 
   expect_failures = [
-    azapi_resource.node_pool,
+    azapi_resource.node_pool["np-1"],
   ]
 }
 

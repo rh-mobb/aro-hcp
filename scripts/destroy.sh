@@ -2,29 +2,27 @@
 # Tear down ARO HCP Terraform resources.
 #
 # OCPBUGS-86702: the RP rejects DELETE of the last node pool. Terraform would
-# try that child first. Remove the default pool from state, then destroy: the
-# cluster goes before the customer RG, and ARM cascades remaining pools.
-# Drop the state-rm once last-pool DELETE is allowed.
+# try those children first. Remove all node pool instances from state, then
+# destroy: the cluster goes before the customer RG, and ARM cascades remaining
+# pools. Drop the state-rm once last-pool DELETE is allowed.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
-NODE_POOL_STATE_ADDRESS="module.cluster.azapi_resource.node_pool"
-
 usage() {
   cat <<EOF
 Usage: $(basename "$0")
 
-Removes the default node pool from Terraform state, then destroys remaining
-Terraform resources (cluster ARM delete cascades remaining pools).
+Removes all node pool resources from Terraform state (OCPBUGS-86702 last-pool
+delete), then destroys remaining Terraform resources (cluster ARM delete
+cascades remaining pools).
 EOF
 }
 
-in_state() {
-  local address="$1"
-  terraform -chdir="${TF_DIR}" state list 2>/dev/null | grep -Fx "${address}" >/dev/null
+node_pool_state_addresses() {
+  terraform -chdir="${TF_DIR}" state list 2>/dev/null | grep -E '^module\.cluster\.azapi_resource\.node_pool(\[".+"\])?$' || true
 }
 
 cluster_provisioning_state() {
@@ -78,11 +76,18 @@ cmd_destroy() {
   fi
   : "${TF_DATA_DIR:?TF_DATA_DIR is required; run via make cluster.<profile>.destroy}"
 
-  if in_state "${NODE_POOL_STATE_ADDRESS}"; then
-    log "Removing ${NODE_POOL_STATE_ADDRESS} from state (OCPBUGS-86702 last-pool delete)"
-    terraform -chdir="${TF_DIR}" state rm "${NODE_POOL_STATE_ADDRESS}"
+  local addrs=()
+  mapfile -t addrs < <(node_pool_state_addresses)
+  if ((${#addrs[@]} > 0)); then
+    log "Removing node pools from state (OCPBUGS-86702 last-pool delete)"
+    local addr
+    for addr in "${addrs[@]}"; do
+      [[ -z "${addr}" ]] && continue
+      log "Removing ${addr} from state"
+      terraform -chdir="${TF_DIR}" state rm "${addr}"
+    done
   else
-    log "Default node pool not in state; skipping state rm"
+    log "No node pools in state; skipping state rm"
   fi
 
   if cluster_exists && [[ "$(cluster_provisioning_state)" == "Deleting" ]]; then

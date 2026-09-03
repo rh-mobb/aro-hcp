@@ -26,6 +26,11 @@ output "worker_subnet_name" {
   value = azurerm_subnet.worker.name
 }
 
+output "worker_subnet_prefix" {
+  description = "Worker subnet CIDR (for downstream platform contract / collision checks)."
+  value       = var.subnet_prefix
+}
+
 output "vnet_integration_subnet_id" {
   value = azapi_resource.vnet_integration_subnet.id
 }

@@ -20,6 +20,7 @@ case "${cmd}" in
       case "${hcp_cmd}" in
         cluster)
           action="${1:-}"
+          shift || true
           case "${action}" in
             show)
               if [[ "${AZ_CLUSTER_EXISTS:-1}" == "0" ]]; then
@@ -37,11 +38,16 @@ case "${cmd}" in
             revoke-credential) echo "revoked" ;;
             nodepool)
               np_action="${1:-}"
+              shift || true
               case "${np_action}" in
                 show)
+                  if [[ "${AZ_NODEPOOL_EXISTS:-1}" == "0" ]]; then
+                    echo "ERROR: not found" >&2
+                    exit 3
+                  fi
                   echo '{"name":"np-1"}'
                   ;;
-                create) echo "created" ;;
+                create) echo "created $*" ;;
                 delete) echo "deleted" ;;
                 list) echo "[]" ;;
               esac

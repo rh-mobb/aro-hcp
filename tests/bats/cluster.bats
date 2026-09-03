@@ -11,9 +11,12 @@ resource_group_name = "test-rg"
 managed_resource_group_name = "test-cluster-managed"
 cluster_version = "4.20"
 cluster_channel = "candidate"
-node_pool_name = "np-1"
-node_pool_replicas = 2
-node_pool_vm_size = "Standard_D4s_v6"
+node_pools = {
+  np-1 = {
+    vm_size  = "Standard_D4s_v6"
+    replicas = 2
+  }
+}
 node_pool_version = "4.20.29"
 node_pool_channel = "candidate"
 api_visibility = "Public"
@@ -60,6 +63,17 @@ EOF
   run bash "${BATS_TEST_DIRNAME}/../../scripts/nodepool.sh" create
   [ "$status" -eq 0 ]
   [[ "$output" == *"already exists"* ]]
+}
+
+@test "nodepool create extra virt pool passes Azure Boost SKU and labels" {
+  AZ_NODEPOOL_EXISTS=0 NAME=np-virt VM_SIZE=Standard_D8s_v6 REPLICAS=2 \
+    LABELS='[{key:workload,value:virtualization}]' \
+    run bash "${BATS_TEST_DIRNAME}/../../scripts/nodepool.sh" create
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"created"* ]]
+  [[ "$output" == *"Standard_D8s_v6"* ]]
+  [[ "$output" == *"np-virt"* ]]
+  [[ "$output" == *"workload"* ]]
 }
 
 @test "cluster delete is no-op when cluster missing" {

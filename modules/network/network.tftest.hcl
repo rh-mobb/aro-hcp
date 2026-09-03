@@ -42,4 +42,9 @@ run "names_default_from_cluster_name" {
     condition     = azurerm_network_security_group.this.name == "test-cluster-nsg"
     error_message = "nsg_name must default to <cluster_name>-nsg."
   }
+
+  assert {
+    condition     = output.worker_subnet_prefix == "10.0.0.0/24"
+    error_message = "worker_subnet_prefix must default to 10.0.0.0/24."
+  }
 }

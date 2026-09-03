@@ -36,6 +36,41 @@ case "${sub}" in
 }
 JSON
           ;;
+        platform)
+          cat <<'JSON'
+{
+  "contract_version": 1,
+  "subscription_id": "00000000-0000-0000-0000-000000000004",
+  "tenant_id": "00000000-0000-0000-0000-000000000001",
+  "location": "uksouth",
+  "cluster_name": "test-cluster",
+  "cluster_id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.RedHatOpenShift/hcpOpenShiftClusters/test-cluster",
+  "resource_group_name": "test-rg",
+  "network": {
+    "vnet_id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet",
+    "vnet_name": "test-cluster-vnet",
+    "address_prefix": "10.0.0.0/16",
+    "worker_subnet_id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/worker",
+    "worker_subnet_name": "test-cluster-worker",
+    "worker_subnet_prefix": "10.0.0.0/24",
+    "nsg_id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Network/networkSecurityGroups/nsg",
+    "jump_subnet_prefix": "10.0.2.0/28",
+    "reserved": {
+      "netapp_subnet_prefix": "10.0.3.0/24"
+    }
+  },
+  "oidc_issuer_url": "https://uksouth.oic.aro.azure.com/tenant/test",
+  "key_vault_id": "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/cust-kv-test",
+  "key_vault_name": "cust-kv-test",
+  "key_vault_uri": "https://cust-kv-test.vault.azure.net/",
+  "eso_client_id": "00000000-0000-0000-0000-000000000099",
+  "api_url": "https://api.test-cluster.example.com:443",
+  "api_visibility": "Public",
+  "cluster_version": "4.22",
+  "node_pool_version": "4.22.9"
+}
+JSON
+          ;;
       esac
     elif [[ "${flag}" == "-raw" ]]; then
       case "${name}" in
@@ -94,7 +129,7 @@ JSON
             echo "module.cluster.azapi_resource.hcp_cluster"
           fi
           if [[ "${TF_STATE_HAS_NODE_POOL:-1}" == "1" ]]; then
-            echo "module.cluster.azapi_resource.node_pool"
+            echo 'module.cluster.azapi_resource.node_pool["np-1"]'
           fi
           ;;
         rm)

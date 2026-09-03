@@ -14,6 +14,8 @@ This repository uses reusable Terraform modules and a **directory-per-cluster** 
 | Configure Entra console OIDC | [External Auth with Entra ID](guides/external-auth-entra-id.md) |
 | Bootstrap GitOps and day-2 operators | [GitOps bootstrap](guides/gitops.md) |
 | Inspect Azure resources, RBAC scopes, and diagrams | [Architecture](architecture.md) |
+| Network privacy (RFC1918 / Private Endpoints) | [Architecture — Network privacy](architecture.md#network-privacy) |
+| Deploy ARO + OpenShift Virtualization (ANF + CNV) | [Virt stack](guides/virt-stack.md) — two checkouts, `clusters/aro-virt`, sibling apply/bootstrap |
 | Choose cluster profiles (public vs private) | [Cluster configurations](../clusters/README.md) |
 
 ## Architecture at a glance
@@ -43,7 +45,8 @@ flowchart TB
 | Profile | Example directory | Typical use |
 |---------|-------------------|-------------|
 | Public API + ingress | `clusters/public/` | Development, public console |
-| Private API + ingress + jump | `clusters/private/` | Private endpoints, sshuttle via jump box |
+| Private API + ingress + jump | `clusters/private/` | RFC1918 API/ingress into the VNet; sshuttle via jump box |
+| ARO + OpenShift Virtualization | `clusters/aro-virt/` | Same as public, plus `node_pools.np-virt` (Dsv6 Azure Boost, 8+ cores) and sibling ANF/CNV |
 
 ## Local preview
 

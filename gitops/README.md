@@ -10,4 +10,4 @@ make cluster.<profile>.apply   # Key Vault redhat-pull-secret
 make cluster.<profile>.bootstrap
 ```
 
-Guide: [GitOps bootstrap](../docs/guides/gitops.md). Org customizations (group `cluster-admin`, extra apps) go in a [cluster-config repo](../docs/guides/gitops.md#cluster-config-repo), not this tree.
+Guide: [GitOps bootstrap](../docs/guides/gitops.md). Org customizations (group `cluster-admin`, extra apps) go in a [cluster-config repo](../docs/guides/gitops.md#cluster-config-repo), not this tree. Virt-ready profile: [`clusters/aro-virt`](../clusters/aro-virt/).

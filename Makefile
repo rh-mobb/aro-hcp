@@ -12,10 +12,11 @@ SCRIPTS := $(ROOT_DIR)/scripts
 TF_VARS_TO_UNSET := TF_VAR_location TF_VAR_cluster_name TF_VAR_resource_group_name \
 	TF_VAR_vnet_name TF_VAR_subnet_name TF_VAR_vnet_integration_subnet_name TF_VAR_nsg_name \
 	TF_VAR_managed_resource_group_name TF_VAR_cluster_version TF_VAR_cluster_channel \
-	TF_VAR_node_pool_name TF_VAR_node_pool_replicas TF_VAR_node_pool_vm_size \
-	TF_VAR_node_pool_version TF_VAR_node_pool_channel TF_VAR_api_visibility TF_VAR_ingress_visibility \
+	TF_VAR_node_pools TF_VAR_node_pool_version TF_VAR_node_pool_channel \
+	TF_VAR_api_visibility TF_VAR_ingress_visibility \
 	TF_VAR_enable_jumpbox TF_VAR_jump_ssh_source_prefix TF_VAR_jump_ssh_public_key \
-	TF_VAR_jump_ssh_private_key_path TF_VAR_pull_secret_path TF_VAR_pull_secret_key_vault_secret_name
+	TF_VAR_jump_ssh_private_key_path TF_VAR_pull_secret_path TF_VAR_pull_secret_key_vault_secret_name \
+	TF_VAR_netapp_subnet_prefix
 
 .PHONY: help fmt lint test setup bootstrap docs-venv docs-preview docs-serve docs-build \
 	cluster.%
@@ -25,7 +26,7 @@ help: ## Show available targets
 	@echo ""
 	@echo "Cluster operations: make cluster.<name>.<operation>"
 	@echo "  init plan apply destroy kubeconfig external-auth external-auth-delete console-secret"
-	@echo "  jump-key jump sshuttle.connect sshuttle.disconnect versions setup bootstrap private-dns private-dns-delete"
+	@echo "  jump-key jump sshuttle.connect sshuttle.disconnect versions setup bootstrap platform private-dns private-dns-delete"
 	@echo "Examples:"
 	@echo "  make cluster.public.init"
 	@echo "  make cluster.public.apply"
@@ -78,10 +79,12 @@ lint: ## Run linters (terraform validate/tflint, shellcheck)
 	@if command -v oc >/dev/null 2>&1; then \
 		oc kustomize $(ROOT_DIR)/gitops/overlays/public >/dev/null; \
 		oc kustomize $(ROOT_DIR)/gitops/overlays/private >/dev/null; \
+		oc kustomize $(ROOT_DIR)/gitops/overlays/aro-virt >/dev/null; \
 		echo "gitops kustomize overlays ok"; \
 	elif command -v kubectl >/dev/null 2>&1; then \
 		kubectl kustomize $(ROOT_DIR)/gitops/overlays/public >/dev/null; \
 		kubectl kustomize $(ROOT_DIR)/gitops/overlays/private >/dev/null; \
+		kubectl kustomize $(ROOT_DIR)/gitops/overlays/aro-virt >/dev/null; \
 		echo "gitops kustomize overlays ok"; \
 	else \
 		echo "oc/kubectl not installed; skipping gitops kustomize"; \
