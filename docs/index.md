@@ -46,7 +46,7 @@ flowchart TB
 |---------|-------------------|-------------|
 | Public API + ingress | `clusters/public/` | Development, public console |
 | Private API + ingress + jump | `clusters/private/` | RFC1918 API/ingress into the VNet; sshuttle via jump box |
-| ARO + OpenShift Virtualization | `clusters/aro-virt/` | Same as public, plus `make cluster.aro-virt.virt-pool` (Dsv6 Azure Boost, 8+ cores) and sibling ANF/CNV |
+| ARO + OpenShift Virtualization | `clusters/aro-virt/` | Same as public, plus `node_pools.np-virt` (Dsv6 Azure Boost, 8+ cores) and sibling ANF/CNV |
 
 ## Local preview
 

@@ -11,9 +11,12 @@ resource_group_name = "test-rg"
 managed_resource_group_name = "test-cluster-managed"
 cluster_version = "4.20"
 cluster_channel = "candidate"
-node_pool_name = "np-1"
-node_pool_replicas = 2
-node_pool_vm_size = "Standard_D4s_v6"
+node_pools = {
+  np-1 = {
+    vm_size  = "Standard_D4s_v6"
+    replicas = 2
+  }
+}
 node_pool_version = "4.20.29"
 node_pool_channel = "candidate"
 api_visibility = "Public"

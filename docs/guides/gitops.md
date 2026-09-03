@@ -97,7 +97,7 @@ See [Who is cluster-admin](external-auth-entra-id.md#who-is-cluster-admin). Do n
 
 If the cluster-config repo is private, add it as a GitOps repository credential. Bootstrap still `oc apply -k`s the **local** installer overlay so operators exist before Argo can clone.
 
-Trident / Azure NetApp Files / OpenShift Virtualization is **not** in this `gitops/` tree. That is a sibling stack: `make cluster.<name>.platform` then the virt/storage repo. Use installer profile [`clusters/aro-virt`](../../clusters/aro-virt/) (`make cluster.aro-virt.virt-pool` for Azure Boost D8s_v6 workers).
+Trident / Azure NetApp Files / OpenShift Virtualization is **not** in this `gitops/` tree. That is a sibling stack: `make cluster.<name>.platform` then the virt/storage repo. Use installer profile [`clusters/aro-virt`](../../clusters/aro-virt/) (`node_pools.np-virt` for Azure Boost D8s_v6 workers). The sibling overlay binds `cluster-admin` to `openshift-gitops-argocd-application-controller` so Argo can create Trident ServiceAccounts, `VolumeSnapshotClass`, `TridentOrchestrator`, and `HyperConverged`. This installer’s baseline keeps the default least-privilege GitOps ClusterRole (ESO ignores ServiceAccount drift instead).
 
 ## OperatorHub
 

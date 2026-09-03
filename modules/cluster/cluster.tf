@@ -1,7 +1,7 @@
-# HCP cluster and default node pool via AzAPI (2026-06-30-preview).
+# HCP cluster and node pools via AzAPI (2026-06-30-preview).
 # schema_validation_enabled = false: preview ARM schemas lag the API.
 # Destroy of the last node pool is blocked (OCPBUGS-86702); scripts/destroy.sh
-# removes azapi_resource.node_pool from state then runs terraform destroy.
+# removes all azapi_resource.node_pool instances from state then runs terraform destroy.
 
 resource "azapi_resource" "hcp_cluster" {
   type                      = "Microsoft.RedHatOpenShift/hcpOpenShiftClusters@${local.hcp_api_version}"
@@ -89,29 +89,44 @@ resource "azapi_resource" "hcp_cluster" {
 }
 
 resource "azapi_resource" "node_pool" {
+  for_each = local.node_pools
+
   type                      = "Microsoft.RedHatOpenShift/hcpOpenShiftClusters/nodePools@${local.hcp_api_version}"
   parent_id                 = azapi_resource.hcp_cluster.id
-  name                      = var.node_pool_name
+  name                      = each.key
   location                  = var.location
   schema_validation_enabled = false
-  tags                      = local.tags
+  tags                      = merge(local.tags, each.value.tags)
 
   body = {
-    properties = {
-      version = {
-        id           = var.node_pool_version
-        channelGroup = var.node_pool_channel
-      }
-      platform = {
-        subnetId = var.worker_subnet_id
-        vmSize   = var.node_pool_vm_size
-        osDisk = {
-          sizeGiB                = var.node_pool_disk_size_gib
-          diskStorageAccountType = var.node_pool_disk_storage_account_type
+    properties = merge(
+      {
+        version = {
+          id           = each.value.version
+          channelGroup = each.value.channel
         }
-      }
-      replicas = var.node_pool_replicas
-    }
+        platform = merge(
+          {
+            vmSize = each.value.vm_size
+          },
+          each.value.subnet_id != null ? { subnetId = each.value.subnet_id } : {},
+          length(each.value.os_disk) > 0 ? { osDisk = each.value.os_disk } : {},
+          each.value.availability_zone != null ? { availabilityZone = each.value.availability_zone } : {},
+          each.value.encryption_at_host != null ? { enableEncryptionAtHost = each.value.encryption_at_host } : {},
+        )
+      },
+      each.value.auto_repair != null ? { autoRepair = each.value.auto_repair } : {},
+      each.value.autoscaling ? {
+        autoScaling = {
+          min = each.value.min_replicas
+          max = each.value.max_replicas
+        }
+      } : {},
+      each.value.autoscaling ? {} : { replicas = each.value.replicas },
+      length(each.value.labels) > 0 ? { labels = each.value.labels } : {},
+      length(each.value.taints) > 0 ? { taints = each.value.taints } : {},
+      each.value.node_drain_timeout != null ? { nodeDrainTimeoutMinutes = each.value.node_drain_timeout } : {},
+    )
   }
 
   timeouts {
@@ -122,8 +137,8 @@ resource "azapi_resource" "node_pool" {
 
   lifecycle {
     precondition {
-      condition     = contains(local.hcp_node_pool_versions, var.node_pool_version)
-      error_message = "node_pool_version ${var.node_pool_version} is not an enabled ${var.node_pool_channel} version in ${var.location}. Available: ${join(", ", local.hcp_node_pool_versions)}."
+      condition     = contains(local.hcp_node_pool_versions_for[each.key], each.value.version)
+      error_message = "node pool ${each.key} version ${each.value.version} is not an enabled ${each.value.channel} version in ${var.location}. Available: ${join(", ", local.hcp_node_pool_versions_for[each.key])}."
     }
   }
 }

@@ -22,7 +22,7 @@ make cluster.public.apply
 | Cluster API (scripts) | Bash + `az aro hcp` | Extra node pools, credentials, console secret / CRBs |
 | Service-owned | ARO HCP RP | Managed RG, worker VMs, hosted control plane |
 
-Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes the default node pool from Terraform state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra node pools: `make cluster.aro-virt.virt-pool` or `NAME=np-2 bash scripts/nodepool.sh create`.
+Last-pool DELETE is blocked ([OCPBUGS-86702](https://issues.redhat.com/browse/OCPBUGS-86702)). `make cluster.<name>.destroy` removes all Terraform `nodePools` from state, then `terraform destroy` (cluster ARM delete cascades remaining pools). Extra pools belong in `node_pools` in tfvars; `NAME=np-2 bash scripts/nodepool.sh create` is still a one-off CLI.
 
 ## Prerequisites
 
@@ -107,7 +107,9 @@ Each cluster is a directory under [`clusters/`](clusters/) with a `terraform.tfv
 | `enable_external_auth` | `true` | Entra app + `externalAuths/entra` after cluster DNS is known. |
 | `oidc_web_redirects` | `{ rhoai = { host = "rh-ai", path = "/oauth2/callback" } }` | Extra Web callbacks. Console, GitOps, and PKCE are always registered. Set `{}` for none. |
 | `jump_ssh_source_prefix` | (empty) | Required when jump is on; SSH 22 allowed from this CIDR only (use your `/32`). |
-| `netapp_subnet_prefix` | `10.0.3.0/24` | Reserved CIDR for a sibling Azure NetApp Files subnet. **Not created here.** Must not overlap worker, integration, or jump (`10.0.2.0/28`). |
+| `node_pools` | `{ np-1 = { vm_size = "Standard_D4s_v6", replicas = 2, availability_zone = "1" } }` | Map of HCP `nodePools` keyed by ARM name. Fields match `az aro hcp cluster nodepool create`. Optional flags (`subnet_id`, disk, auto-repair, taints, …) are omitted from ARM when unset. `availability_zone` is Azure zone `1` / `2` / `3` (not `uksouth-1`); omit to leave unpinned. `clusters/aro-virt` adds `np-virt` (`Standard_D8s_v6`, label `workload=virtualization`, zone `1`). |
+| `node_pool_version` | `4.22.9` | Inherited by `node_pools` entries that omit `version`. |
+| `node_pool_channel` | `stable` | Inherited by `node_pools` entries that omit `channel`. |
 | `pull_secret_path` | (empty) | Optional. Example profiles set `../tmp/pull-secret.txt` (gitignored). When set, Terraform writes Key Vault `redhat-pull-secret`. `PULL_SECRET_PATH` still overrides via Make. Never commit the file. |
 
 The jump public key is `clusters/<name>/jump.pub` (create with `make cluster.<name>.jump-key`); Make exports it as `TF_VAR_jump_ssh_public_key` when the file exists. It is not stored in `terraform.tfvars`.
@@ -137,7 +139,7 @@ make fmt lint test       # before every commit
 | Register RP / create RG | `make cluster.<name>.apply` |
 | Network + KeyVault + identities | `make cluster.<name>.apply` |
 | Cluster create | `make cluster.<name>.apply` (AzAPI in `modules/cluster`) |
-| Node pools | Default: Terraform. Extra: `scripts/nodepool.sh` |
+| Node pools | Terraform `node_pools` (default `np-1`; extra keys in tfvars). CLI: `scripts/nodepool.sh` |
 | Credentials | `make cluster.<name>.kubeconfig` |
 | get-versions | `make cluster.<name>.versions` |
 | External auth | `make cluster.<name>.external-auth` |

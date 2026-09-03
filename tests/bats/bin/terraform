@@ -129,7 +129,7 @@ JSON
             echo "module.cluster.azapi_resource.hcp_cluster"
           fi
           if [[ "${TF_STATE_HAS_NODE_POOL:-1}" == "1" ]]; then
-            echo "module.cluster.azapi_resource.node_pool"
+            echo 'module.cluster.azapi_resource.node_pool["np-1"]'
           fi
           ;;
         rm)

@@ -20,6 +20,13 @@ locals {
     if try(v.channelGroup, "") == var.node_pool_channel
   ])
 
+  hcp_node_pool_versions_for = {
+    for name, p in local.node_pools : name => sort([
+      for v in local.hcp_enabled_versions : v.name
+      if try(v.channelGroup, "") == p.channel
+    ])
+  }
+
   hcp_cluster_streams = sort(distinct([
     for ver in local.hcp_cluster_versions : join(".", slice(split(".", ver), 0, 2))
     if length(split(".", ver)) >= 2

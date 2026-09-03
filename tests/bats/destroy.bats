@@ -10,20 +10,25 @@ location = "uksouth"
 cluster_name = "test-cluster"
 resource_group_name = "test-rg"
 managed_resource_group_name = "test-cluster-managed"
-node_pool_name = "np-1"
+node_pools = {
+  np-1 = {
+    vm_size  = "Standard_D4s_v6"
+    replicas = 2
+  }
+}
 EOF
 }
 
 @test "destroy removes node pool from state then full destroy" {
   run bash "${BATS_TEST_DIRNAME}/../../scripts/destroy.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"terraform state rm module.cluster.azapi_resource.node_pool"* ]]
+  [[ "$output" == *"terraform state rm module.cluster.azapi_resource.node_pool[\"np-1\"]"* ]]
   [[ "$output" == *"terraform destroy -auto-approve"* ]]
   [[ "$output" == *"-var-file="* ]]
   [[ "$output" != *"-target=azapi_resource.hcp_cluster"* ]]
 
   local rm_line destroy_line
-  rm_line="$(echo "$output" | grep -n "terraform state rm module.cluster.azapi_resource.node_pool" | head -1 | cut -d: -f1)"
+  rm_line="$(echo "$output" | grep -n 'terraform state rm module.cluster.azapi_resource.node_pool\["np-1"\]' | head -1 | cut -d: -f1)"
   destroy_line="$(echo "$output" | grep -n "terraform destroy -auto-approve" | head -1 | cut -d: -f1)"
   [ "${rm_line}" -lt "${destroy_line}" ]
 }
@@ -47,7 +52,7 @@ EOF
   local mk="${BATS_TEST_DIRNAME}/../../Makefile"
   run grep -A8 '^TF_VARS_TO_UNSET' "${mk}"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"TF_VAR_node_pool_replicas"* ]]
+  [[ "$output" == *"TF_VAR_node_pools"* ]]
   [[ "$output" == *"TF_VAR_vnet_name"* ]]
   [[ "$output" == *"TF_VAR_pull_secret_path"* ]]
   run grep -A6 '^test:' "${mk}"

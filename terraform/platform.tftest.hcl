@@ -88,6 +88,11 @@ run "platform_contract_v1_defaults" {
   }
 
   assert {
+    condition     = output.platform.node_pools["np-1"].availability_zone == "1"
+    error_message = "Default np-1 in the platform contract must pin Azure availability zone 1."
+  }
+
+  assert {
     condition     = output.netapp_subnet_prefix == "10.0.3.0/24"
     error_message = "netapp_subnet_prefix output must match the reserved CIDR."
   }

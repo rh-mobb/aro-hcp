@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `make cluster.<name>.platform` writes gitignored `clusters/<name>/platform.json` (contract v1) for sibling [`validated-pattern-openshift-virt`](https://github.com/rh-mobb/validated-pattern-openshift-virt)
 - Reserved `netapp_subnet_prefix` default `10.0.3.0/24` (not created here; must not overlap worker, integration, or jump)
 - Example profile [`clusters/aro-virt`](clusters/aro-virt/) and GitOps overlay `gitops/overlays/aro-virt`
-- `make cluster.<name>.virt-pool` — Azure Boost `Standard_D8s_v6` × 2, label `workload=virtualization`; `scripts/nodepool.sh` accepts `LABELS=` / `TAINTS=`
+- `node_pools` map (AzAPI `nodePools`): CLI-parity fields, optional `availability_zone` (`1`/`2`/`3`), omit-if-unset ARM body. `clusters/aro-virt` adds `np-virt` (`Standard_D8s_v6`, `workload=virtualization`). `scripts/nodepool.sh` remains a one-off CLI (`LABELS=` / `TAINTS=`)
 - Architecture [Network privacy](docs/architecture.md#network-privacy): RFC1918 or Private Endpoints, with an exception table for public API/ingress, node outbound, public Key Vault KMS, jump PIP, Entra, ARM, and image/git pulls
 - `modules/entra` — Entra OIDC app, service principal, Key Vault client secret, and AzAPI `externalAuths/entra` as part of `make cluster.<name>.apply` (redirect URIs from cluster DNS)
 - `enable_external_auth` (default true) and `oidc_web_redirects` (default RHOAI `rh-ai` `/oauth2/callback`); console, GitOps, and PKCE `http://localhost` are always registered
@@ -33,6 +33,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `hack/versions` — plan-time OpenShift version validation per region
 
 ### Changed
+- Extra node pools live in `node_pools` (Terraform), not `make cluster.<name>.virt-pool`
+- Destroy state-rms **all** Terraform `nodePools` instances (OCPBUGS-86702), then `terraform destroy`
+- Docs: sibling virt overlay binds `cluster-admin` to the shared GitOps application controller; this installer keeps the default least-privilege ClusterRole ([virt #6](https://github.com/rh-mobb/validated-pattern-openshift-virt/issues/6))
+
 - Destroy a sibling ANF/Trident stack first; `make cluster.<name>.destroy` does not call it
 - Deployer is Entra app and service-principal **owner** so Graph can add the client secret (`Application.ReadWrite.OwnedBy` cannot manage an ownerless app)
 - `make cluster.<name>.external-auth` applies the console secret and CRBs from Key Vault when Terraform owns the app; it does not create or rotate the registration. Entra Graph rights are required at **apply**, not only at external-auth. `external-auth-delete` leaves ARM `externalAuths` and the app for `terraform destroy`

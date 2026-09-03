@@ -91,7 +91,7 @@ Permissions fall into three planes: **Azure RBAC**, **Microsoft Entra ID**, and 
 | Retry console OAuth secret | `cluster.<name>.console-secret` | None | App credential reset if re-running | **cluster-admin** kubeconfig + sshuttle for private API |
 | GitOps + operator baseline | `cluster.<name>.bootstrap` | **Key Vault Secrets User** (or deployer Key Vault Administrator) to `get` `redhat-pull-secret` unless `PULL_SECRET_PATH` is set | None | **cluster-admin** kubeconfig; sshuttle if API is private |
 | Destroy | `cluster.<name>.destroy` | Same as **apply** | Deletes Terraform-managed Entra app | Optional admin kubeconfig if deleting console secret |
-| Extra node pool | `scripts/nodepool.sh create` or `make cluster.<name>.virt-pool` | **Contributor** on cluster (`nodePools` write) | None | None |
+| Extra node pool | `node_pools` in tfvars (Terraform) or `scripts/nodepool.sh create` | **Contributor** on cluster (`nodePools` write) | None | None |
 
 ### Azure RBAC detail by target
 

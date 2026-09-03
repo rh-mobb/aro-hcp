@@ -7,9 +7,14 @@ output "cluster_id" {
   value       = azapi_resource.hcp_cluster.id
 }
 
+output "node_pool_ids" {
+  description = "Azure resource IDs of HCP nodePools keyed by pool name."
+  value       = { for name, r in azapi_resource.node_pool : name => r.id }
+}
+
 output "node_pool_id" {
-  description = "Azure resource ID of the default node pool."
-  value       = azapi_resource.node_pool.id
+  description = "Azure resource ID of np-1 when present; otherwise the first pool (CLI convenience)."
+  value       = azapi_resource.node_pool[contains(keys(azapi_resource.node_pool), "np-1") ? "np-1" : sort(keys(azapi_resource.node_pool))[0]].id
 }
 
 output "api_url" {

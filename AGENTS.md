@@ -75,7 +75,6 @@ make cluster.my-cluster.apply               # terraform apply (cluster + node po
 make cluster.my-cluster.kubeconfig          # admin creds (24h TTL)
 make cluster.my-cluster.external-auth       # Entra + console (required for a usable console)
 make cluster.my-cluster.bootstrap    # optional: GitOps + Web Terminal + Compliance
-make cluster.my-cluster.virt-pool           # optional: Azure Boost D8s_v6 workers for CNV
 make cluster.my-cluster.platform            # gitignored platform.json for a sibling virt/storage stack
 make cluster.my-cluster.destroy             # reverse teardown (state-rm last pool, then terraform destroy)
 ```

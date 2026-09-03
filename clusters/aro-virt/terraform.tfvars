@@ -7,7 +7,6 @@
 #   make cluster.aro-virt.kubeconfig
 #   make cluster.aro-virt.external-auth
 #   make cluster.aro-virt.bootstrap
-#   make cluster.aro-virt.virt-pool          # Azure Boost Dsv6, 8+ cores (required for CNV)
 #   make cluster.aro-virt.platform
 #   # sibling validated-pattern-openshift-virt:
 #   ARO_HCP_ROOT=… ARO_HCP_PROFILE=aro-virt make cluster.aro-virt.apply
@@ -23,11 +22,26 @@ cluster_version = "4.22"
 cluster_channel = "stable"
 
 # Platform / operator workers (not a supported CNV SKU — 8+ core Dsv5/Dsv6 required).
-node_pool_name     = "np-1"
-node_pool_replicas = 2
-node_pool_vm_size  = "Standard_D4s_v6"
-node_pool_version  = "4.22.9"
-node_pool_channel  = "stable"
+# availability_zone is Azure zone 1/2/3 (not uksouth-1). Omit to leave unpinned.
+node_pool_version = "4.22.9"
+node_pool_channel = "stable"
+
+node_pools = {
+  np-1 = {
+    vm_size           = "Standard_D4s_v6"
+    replicas          = 2
+    availability_zone = "1"
+  }
+  # Azure Boost Dsv6, 8+ cores (required for CNV). Quota: +16 vCPU Standard Dsv6.
+  np-virt = {
+    vm_size           = "Standard_D8s_v6"
+    replicas          = 2
+    availability_zone = "1"
+    labels = {
+      workload = "virtualization"
+    }
+  }
+}
 
 api_visibility     = "Public"
 ingress_visibility = "Public"
@@ -37,8 +51,7 @@ enable_jumpbox = false
 # Reserved CIDR for sibling ANF delegated subnet (not created here).
 # netapp_subnet_prefix = "10.0.3.0/24"
 
-# Extra virt pool is CLI, not Terraform: make cluster.aro-virt.virt-pool
-# Default: NAME=np-virt VM_SIZE=Standard_D8s_v6 REPLICAS=2
-# label workload=virtualization. Quota: +16 vCPU Standard Dsv6.
+# Extra virt pool is in node_pools (np-virt). Do not taint unless HyperConverged
+# and virt-handler have matching tolerations. Omit subnet_id to use the cluster default.
 
 pull_secret_path = "../tmp/pull-secret.txt"

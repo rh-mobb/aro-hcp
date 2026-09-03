@@ -16,12 +16,21 @@ cluster_name = "my-cluster"
 cluster_version = "4.22"
 cluster_channel = "stable"
 
-# Default node pool
-node_pool_name     = "np-1"
-node_pool_replicas = 2
-node_pool_vm_size  = "Standard_D4s_v6"
-node_pool_version  = "4.22.9"
-node_pool_channel  = "stable"
+# Default node pool (np-1). Extra pools belong in node_pools.
+# Fields match az aro hcp cluster nodepool create (labels, taints, autoscaling,
+# disk, encryption-at-host, auto-repair, drain timeout, subnet_id).
+# availability_zone is Azure zone 1/2/3 (not uksouth-1). Omit to leave unpinned.
+# Optional CLI flags (subnet_id, disk_*, auto_repair, taints, …) are omitted from ARM when unset.
+node_pool_version = "4.22.9"
+node_pool_channel = "stable"
+
+node_pools = {
+  np-1 = {
+    vm_size           = "Standard_D4s_v6"
+    replicas          = 2
+    availability_zone = "1"
+  }
+}
 
 # Create-time only; cannot change in place.
 api_visibility     = "Public"

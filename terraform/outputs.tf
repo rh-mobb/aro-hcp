@@ -89,8 +89,13 @@ output "cluster_id" {
   value       = module.cluster.cluster_id
 }
 
+output "node_pool_ids" {
+  description = "Azure resource IDs of HCP nodePools keyed by pool name."
+  value       = module.cluster.node_pool_ids
+}
+
 output "node_pool_id" {
-  description = "Azure resource ID of the default node pool."
+  description = "Azure resource ID of np-1 when present; otherwise the first pool."
   value       = module.cluster.node_pool_id
 }
 
@@ -148,15 +153,8 @@ output "cluster_channel" {
 }
 
 output "node_pool_name" {
-  value = var.node_pool_name
-}
-
-output "node_pool_replicas" {
-  value = var.node_pool_replicas
-}
-
-output "node_pool_vm_size" {
-  value = var.node_pool_vm_size
+  description = "Convenience: np-1 if present, else the lexicographically first node_pools key."
+  value       = contains(keys(var.node_pools), "np-1") ? "np-1" : sort(keys(var.node_pools))[0]
 }
 
 output "node_pool_version" {
@@ -165,6 +163,24 @@ output "node_pool_version" {
 
 output "node_pool_channel" {
   value = var.node_pool_channel
+}
+
+output "node_pools" {
+  description = "Configured node pools (CLI-parity fields plus inherited version/channel)."
+  value = {
+    for name, p in var.node_pools : name => {
+      vm_size           = p.vm_size
+      replicas          = p.min_replicas != null ? null : p.replicas
+      min_replicas      = p.min_replicas
+      max_replicas      = p.max_replicas
+      version           = coalesce(p.version, var.node_pool_version)
+      channel           = coalesce(p.channel, var.node_pool_channel)
+      availability_zone = p.availability_zone
+      subnet_id         = p.subnet_id
+      labels            = p.labels
+      taints            = p.taints
+    }
+  }
 }
 
 output "api_visibility" {
@@ -245,5 +261,19 @@ output "platform" {
     api_visibility    = var.api_visibility
     cluster_version   = var.cluster_version
     node_pool_version = var.node_pool_version
+    node_pools = {
+      for name, p in var.node_pools : name => {
+        vm_size           = p.vm_size
+        replicas          = p.min_replicas != null ? null : p.replicas
+        min_replicas      = p.min_replicas
+        max_replicas      = p.max_replicas
+        version           = coalesce(p.version, var.node_pool_version)
+        channel           = coalesce(p.channel, var.node_pool_channel)
+        availability_zone = p.availability_zone
+        subnet_id         = p.subnet_id
+        labels            = p.labels
+        taints            = p.taints
+      }
+    }
   }
 }

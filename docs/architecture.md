@@ -147,7 +147,7 @@ flowchart TB
 | Stage | Tool | What it creates |
 |-------|------|-----------------|
 | `make setup` | `scripts/setup.sh` | Installs the `az aro hcp` CLI extension. No Azure resources. |
-| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` + `azuread` | Customer RG, network, Key Vault, etcd key, optional `redhat-pull-secret`, 13 HCP identities, ESO workload identity + federated credential, 28 operator role assignments + Key Vault Secrets User for ESO, `hcpOpenShiftClusters`, default `nodePools/np-1`, Entra app + `externalAuths/entra` + Key Vault client secret (unless `enable_external_auth = false`). |
+| `make cluster.<name>.apply` | Terraform `azurerm` + `azapi` + `azuread` | Customer RG, network, Key Vault, etcd key, optional `redhat-pull-secret`, 13 HCP identities, ESO workload identity + federated credential, 28 operator role assignments + Key Vault Secrets User for ESO, `hcpOpenShiftClusters`, `nodePools` from `node_pools` (default `np-1`), Entra app + `externalAuths/entra` + Key Vault client secret (unless `enable_external_auth = false`). |
 | `make cluster.<name>.kubeconfig` | `az aro hcp cluster request-credential` | Local `.kube/config` only. Admin credential TTL is 24 hours. |
 | `make cluster.<name>.external-auth` | `oc` + optional Entra fallback | Console secret in `openshift-config`, break-glass `cluster-admin` CRB, GitOps OIDC patch. When Terraform already created the app, does **not** create or rotate Entra. |
 | `make cluster.<name>.bootstrap` | `oc apply -k` + Argo `Application` | OpenShift GitOps, Web Terminal, Compliance Operator, External Secrets Operator; ConfigMap `openshift-gitops/aro-platform-metadata` (ESO client ID + vault URI from Terraform outputs); `kube-system/additional-pull-secret` from Key Vault `redhat-pull-secret` (or `PULL_SECRET_PATH`); root app syncs [`gitops/overlays/public`](../gitops/overlays/public/) or [`private`](../gitops/overlays/private/) (from `api_visibility`, or `GITOPS_OVERLAY`). |
@@ -205,7 +205,7 @@ flowchart TB
 | **Owner**, or **Contributor** + **User Access Administrator**, on the subscription or customer RG | Contributor can create RG, network, Key Vault, identities, and the HCP ARM resource. It **cannot** create role assignments. Terraform writes 28 operator assignments plus Key Vault Administrator for the deployer. That needs `Microsoft.Authorization/roleAssignments/write` (User Access Administrator or Owner). |
 | Resource providers registered | At minimum `Microsoft.RedHatOpenShift`. Terraform’s azurerm provider also auto-registers providers it uses (`Microsoft.Network`, `Microsoft.KeyVault`, `Microsoft.ManagedIdentity`, `Microsoft.Authorization`). Registering a provider is a **subscription** action; RG-only Contributor cannot do it if the provider is not already registered. |
 | ARO HCP preview **allow-list** | Not an Azure role. The subscription must be enrolled for the preview or cluster create fails regardless of RBAC. |
-| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `location`. When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. `make cluster.<name>.virt-pool` adds **+16 vCPU** `Standard_D8s_v6`. |
+| Quota | Default node pool is `Standard_D4s_v6` × 2 = **8 vCPU** in `location`. When `enable_jumpbox = true`, add **+2 vCPU** of `Standard_D2s_v6`. `clusters/aro-virt` `node_pools.np-virt` adds **+16 vCPU** `Standard_D8s_v6`. |
 
 RG-scoped Owner / Contributor+UAA is enough for this repo because VNet, NSG, Key Vault, identities, and the cluster all live in one RG. A pre-existing VNet in another RG would also need UAA (or Owner) on that VNet.
 
@@ -375,7 +375,7 @@ Terraform resources live under [`modules/`](../modules/) (composed by [`terrafor
 | Federated identity credential × 1 | `eso-external-secrets` | `azurerm_federated_identity_credential.eso` | Trusts `system:serviceaccount:external-secrets-operator:external-secrets-sa` against the cluster OIDC issuer. |
 | Role assignment × 1 | Key Vault Administrator | `azurerm_role_assignment.deployer_key_vault_admin` | Deployer object ID so Terraform can create the etcd key and optional pull secret. |
 | HCP cluster | `my-cluster` | `azapi_resource.hcp_cluster` | `hcpOpenShiftClusters@2026-06-30-preview`. `schema_validation_enabled = false`. Timeouts 120m. |
-| Node pool | `np-1` | `azapi_resource.node_pool` | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms this resource first. |
+| Node pool | `node_pools` keys (default `np-1`) | `azapi_resource.node_pool` (`for_each`) | Child `nodePools`. Last-pool DELETE is blocked (OCPBUGS-86702); destroy state-rms all instances first. |
 
 This reference **does not** create a private Key Vault, private endpoint, or `privatelink.vaultcore.azure.net` zone. That is a documented [network privacy](#network-privacy) exception. The demo Bicep in `references/` can; this repo sets etcd KMS `visibility` to `Public`.
 
@@ -700,27 +700,36 @@ Child resource:
 .../hcpOpenShiftClusters/my-cluster/nodePools/np-1
 ```
 
-| Property | Default (`terraform.tfvars.example`) |
+| Property | Default (`clusters/public/terraform.tfvars`) |
 |----------|----------------------------------|
 | Name | `np-1` |
-| Replicas | `2` |
+| Replicas | `2`. Or set `min_replicas` and `max_replicas` together (CLI autoscaling; ARM omits `replicas`). |
 | VM size | `Standard_D4s_v6` |
-| Version / channel | `4.22.9` / `stable`. Plan fails unless the patch is enabled in `hcpOpenShiftVersions` for `location`. |
-| Subnet | Cluster `platform.subnetId` (worker subnet) |
+| Availability zone | `1` (`availability_zone`). Azure zone number, not a Kubernetes topology name (`uksouth-1`). Omit to leave the pool unpinned — ARO HCP is one zone per pool; replicas are not spread across zones. |
+| Subnet | Unset unless `subnet_id` is set (CLI `--subnet-id`). The service uses the cluster worker subnet. Same subnet can be shared by pools of one cluster. |
+| Version / channel | Inherited from `node_pool_version` / `node_pool_channel` when omitted. Plan fails unless the patch is enabled in `hcpOpenShiftVersions` for `location`. |
+| OS disk | Unset unless `disk_size_gib`, `disk_storage_account_type`, `disk_type`, or `disk_encryption_set` is set. Service defaults apply. |
+| Auto-repair / encryption-at-host / drain timeout | Unset unless specified (`node_drain_timeout` 0–10080 minutes). |
+| Labels / taints | Optional. Labels are a Terraform map, sent as ARM `[{key,value}]`. Taint `effect` is `NoSchedule`, `PreferNoSchedule`, or `NoExecute`. |
 
-OS disk is 64 GiB Standard SSD (`node_pool_disk_size_gib` / `node_pool_disk_storage_account_type`). Extra pools: `NAME=… REPLICAS=… VM_SIZE=… bash scripts/nodepool.sh create`.
+OS disk, autoscaling, taints, and the other CLI create flags are fields on each `node_pools` entry. Extra pools go in the same map (see [`clusters/aro-virt`](../clusters/aro-virt/)); `NAME=… REPLICAS=… VM_SIZE=… bash scripts/nodepool.sh create` remains a one-off CLI.
 
 ### OpenShift Virtualization workers (`clusters/aro-virt`)
 
-Microsoft supports CNV on ARO only on **Dsv5 / Dsv6 with 8+ cores** (Azure Boost). The default `np-1` (`Standard_D4s_v6`) stays for platform pods. Create the virt pool after apply:
+Microsoft supports CNV on ARO only on **Dsv5 / Dsv6 with 8+ cores** (Azure Boost). Keep `np-1` (`Standard_D4s_v6`) for platform pods. `clusters/aro-virt/terraform.tfvars` adds `np-virt` in `node_pools`:
 
-```bash
-make cluster.aro-virt.virt-pool
-# NAME=np-virt VM_SIZE=Standard_D8s_v6 REPLICAS=2
-# labels: workload=virtualization
+```hcl
+np-virt = {
+  vm_size           = "Standard_D8s_v6"
+  replicas          = 2
+  availability_zone = "1"
+  labels = {
+    workload = "virtualization"
+  }
+}
 ```
 
-Override with `VIRT_POOL_NAME`, `VIRT_POOL_VM_SIZE`, `VIRT_POOL_REPLICAS`, `VIRT_POOL_LABELS`. Then `make cluster.aro-virt.platform` and the sibling virt repo (`clusters/aro-virt`). Quota: **+16 vCPU** Dsv6. Destroy extra pools with `NAME=np-virt bash scripts/nodepool.sh delete` before cluster destroy, or let cluster ARM delete cascade them.
+Quota: **+16 vCPU** Dsv6. Do not taint unless HyperConverged and virt-handler have matching tolerations. Then `make cluster.aro-virt.platform` and the sibling virt repo. Cluster ARM delete cascades extra pools after destroy state-rms Terraform `nodePools`.
 
 Worker VMs and disks appear in the **managed** RG. Their NICs attach to `${cluster_name}-worker` (`my-cluster-worker` in the example).
 
@@ -805,7 +814,7 @@ Terraform does not own in-cluster operators. Bootstrap:
 3. Waits for the CSV and the default Argo CD instance (`openshift-gitops`).
 4. Publishes ConfigMap `openshift-gitops/aro-platform-metadata` from Terraform outputs (`esoClientId`, `azureTenantId`, `keyVaultUri`, `keyVaultName`, `pullSecretKeyVaultSecretName`). Same handshake as ROSA `rosa-platform-metadata`.
 5. Applies [`gitops/overlays/<profile>/`](../gitops/overlays/) (Web Terminal, Compliance Operator, External Secrets Operator). Compliance `Subscription.spec.config` sets `nodeSelector` to `node-role.kubernetes.io/worker` and `PLATFORM=HyperShift` so the operator can schedule on HCP (the CSV otherwise selects master nodes). A Job waits for the ConfigMap, annotates `external-secrets-sa`, and applies `ClusterSecretStore` plus `ExternalSecret` for `additional-pull-secret`.
-6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at `GITOPS_REPO` (default this repo, path `GITOPS_SOURCE_ROOT`/`overlay`). A cluster-config repo uses `GITOPS_SOURCE_ROOT=overlays` and Kustomize-includes this tree as a remote base. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts).
+6. Plants Argo `Application` `cluster-config` (`prune: false`) pointing at `GITOPS_REPO` (default this repo, path `GITOPS_SOURCE_ROOT`/`overlay`). A cluster-config repo uses `GITOPS_SOURCE_ROOT=overlays` and Kustomize-includes this tree as a remote base. `ignoreDifferences` on ServiceAccount annotations / `imagePullSecrets` / `secrets` so selfHeal does not fight OpenShift dockercfg or the ESO metadata Job (the default GitOps controller cannot patch ServiceAccounts). The virt/storage sibling overlay binds `cluster-admin` to that controller (`rwx-storage-gitops-controller`) so Argo can create Trident ServiceAccounts, `VolumeSnapshotClass`, `TridentOrchestrator`, and `HyperConverged`.
 7. If external-auth already ran: merge the GitOps `/auth/callback` redirect URI, copy the console client secret into `argocd-secret`, and patch the default `ArgoCD/openshift-gitops` CR for Entra OIDC (disable Dex). Skip with a log line when `.external-auth/state.env` or the console secret is missing.
 
 HCP has no in-cluster OAuth server. The operator default (`spec.sso.dex.openShiftOAuth: true`) cannot authenticate GitOps users; do not GitOps-own a second Argo CD instance to fix that — patch the prebuilt CR from bootstrap. Client ID and secret stay out of committed `gitops/` YAML.
@@ -882,8 +891,7 @@ flowchart TB
 | Resource | Created by | Destroyed by | Customer-writable |
 |----------|------------|--------------|-------------------|
 | Customer RG, VNet, subnets, NSG, KV, identities, operator RBAC | Terraform | `terraform destroy` | Yes |
-| `hcpOpenShiftClusters` / default `nodePools` | Terraform AzAPI | `make cluster.<name>.destroy` (state-rm last pool, then destroy) | Update via TF/ARM; do not hand-edit RP fields |
-| Extra `nodePools` | `az aro hcp` | `scripts/nodepool.sh delete` or cluster delete | Via CLI |
+| `hcpOpenShiftClusters` / `nodePools` | Terraform AzAPI (`node_pools`) | `make cluster.<name>.destroy` (state-rm all TF pools, then destroy) | Update via TF/ARM; do not hand-edit RP fields |
 | Managed RG contents | Resource provider / HyperShift | Cluster delete | No (deny assignment) |
 | Hosted control plane | ARO HCP service | Cluster delete | No |
 | Admin kubeconfig | Credential API | Expires (24h) or `revoke-credentials` | Local file only |
