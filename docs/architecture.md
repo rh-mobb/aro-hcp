@@ -729,7 +729,7 @@ np-virt = {
 }
 ```
 
-Quota: **+16 vCPU** Dsv6. Do not taint unless HyperConverged and virt-handler have matching tolerations. Then `make cluster.aro-virt.platform` and the sibling virt repo. Cluster ARM delete cascades extra pools after destroy state-rms Terraform `nodePools`.
+Quota: **+16 vCPU** Dsv6. Do not taint unless HyperConverged and virt-handler have matching tolerations. Operator path: [Virt stack](guides/virt-stack.md) (`make cluster.aro-virt.platform` then the sibling). Cluster ARM delete cascades extra pools after destroy state-rms Terraform `nodePools`.
 
 Worker VMs and disks appear in the **managed** RG. Their NICs attach to `${cluster_name}-worker` (`my-cluster-worker` in the example).
 

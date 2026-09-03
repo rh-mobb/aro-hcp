@@ -22,6 +22,7 @@ You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `c
    ```bash
    cp -r clusters/public clusters/my-cluster
    # or clusters/private for private API/ingress + jump box
+   # or clusters/aro-virt for CNV-ready workers + reserved ANF CIDR (then sibling repo)
    ```
 
 3. When `enable_jumpbox = true`:
@@ -36,6 +37,7 @@ You provide `clusters/<name>/terraform.tfvars`. Per-cluster state defaults to `c
 |---------|-----------|--------------|
 | Public API + ingress | [`clusters/public/`](../../clusters/public/) | `api_visibility = "Public"`, `ingress_visibility = "Public"`, `enable_jumpbox = false` |
 | Private API + ingress + jump | [`clusters/private/`](../../clusters/private/) | `api_visibility = "Private"`, `ingress_visibility = "Private"`, `enable_jumpbox = true`, set `jump_ssh_source_prefix` |
+| ARO + OpenShift Virtualization | [`clusters/aro-virt/`](../../clusters/aro-virt/) | Public API; `node_pools.np-virt` D8s_v6; reserved ANF CIDR. Full path: [Virt stack](../guides/virt-stack.md) |
 
 ## Deployment workflow
 
@@ -63,6 +65,7 @@ Teardown:
 ```bash
 make cluster.<name>.external-auth-delete   # in-cluster console secret only when TF owns Entra
 # If a sibling ANF/Trident stack is attached, destroy it first (cleanup + terraform destroy).
+# See guides/virt-stack.md — leftover ANF volumes block terraform destroy of the pool.
 make cluster.<name>.destroy
 ```
 

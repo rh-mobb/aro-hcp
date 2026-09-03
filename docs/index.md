@@ -15,7 +15,7 @@ This repository uses reusable Terraform modules and a **directory-per-cluster** 
 | Bootstrap GitOps and day-2 operators | [GitOps bootstrap](guides/gitops.md) |
 | Inspect Azure resources, RBAC scopes, and diagrams | [Architecture](architecture.md) |
 | Network privacy (RFC1918 / Private Endpoints) | [Architecture — Network privacy](architecture.md#network-privacy) |
-| Attach ANF + Trident (sibling repo) | [Architecture](architecture.md) reserved CIDR `10.0.3.0/24`; `make cluster.<name>.platform`; [issue #16](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/16) |
+| Deploy ARO + OpenShift Virtualization (ANF + CNV) | [Virt stack](guides/virt-stack.md) — two checkouts, `clusters/aro-virt`, sibling apply/bootstrap |
 | Choose cluster profiles (public vs private) | [Cluster configurations](../clusters/README.md) |
 
 ## Architecture at a glance

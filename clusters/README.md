@@ -8,7 +8,7 @@ Each directory under `clusters/` represents one ARO HCP deployment. Example prof
 |-----------|---------|
 | [`public/`](public/) | Public API and ingress; no jump box |
 | [`private/`](private/) | Private API and ingress (RFC1918 into the VNet); jump box enabled |
-| [`aro-virt/`](aro-virt/) | Public API; reserved ANF CIDR; `node_pools.np-virt` Azure Boost D8s_v6 workers |
+| [`aro-virt/`](aro-virt/) | Public API; reserved ANF CIDR; `node_pools.np-virt` Azure Boost D8s_v6 workers. Full path: [Virt stack](../docs/guides/virt-stack.md) |
 
 ## Usage
 

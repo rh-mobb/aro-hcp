@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Operator guide [Virt stack](docs/guides/virt-stack.md): two-checkout e2e for ARO HCP + sibling ANF/Trident/CNV (verify, GitOps RBAC, destroy including leftover ANF volumes)
+
 - `make cluster.<name>.platform` writes gitignored `clusters/<name>/platform.json` (contract v1) for sibling [`validated-pattern-openshift-virt`](https://github.com/rh-mobb/validated-pattern-openshift-virt)
 - Reserved `netapp_subnet_prefix` default `10.0.3.0/24` (not created here; must not overlap worker, integration, or jump)
 - Example profile [`clusters/aro-virt`](clusters/aro-virt/) and GitOps overlay `gitops/overlays/aro-virt`

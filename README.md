@@ -61,7 +61,7 @@ make cluster.my-cluster.kubeconfig      # admin creds (24h TTL)
 make cluster.my-cluster.external-auth   # Entra + console; cluster-admin for you unless SKIP_RBAC_USER=1
 ```
 
-Committed examples: [`clusters/public`](clusters/public/terraform.tfvars) (public API/ingress) and [`clusters/private`](clusters/private/terraform.tfvars) (private + jump box). See [`clusters/README.md`](clusters/README.md).
+Committed examples: [`clusters/public`](clusters/public/terraform.tfvars) (public API/ingress), [`clusters/private`](clusters/private/terraform.tfvars) (private + jump box), and [`clusters/aro-virt`](clusters/aro-virt/terraform.tfvars) (CNV-ready workers). Virt full stack (this repo + sibling ANF/CNV): **[Virt stack](docs/guides/virt-stack.md)**. See [`clusters/README.md`](clusters/README.md).
 
 ## Makefile targets
 
@@ -90,7 +90,7 @@ Per cluster (`<name>` = directory under `clusters/`):
 | `make cluster.<name>.sshuttle.disconnect` | Stop background sshuttle for this profile |
 | `make cluster.<name>.external-auth` | Console secret + `cluster-admin` CRB (app already created by Terraform unless `enable_external_auth = false`) |
 | `make cluster.<name>.bootstrap` | OpenShift GitOps + Web Terminal + Compliance + ESO (optional). Point Argo at a [cluster-config repo](docs/guides/gitops.md#cluster-config-repo) with `GITOPS_REPO` + `GITOPS_SOURCE_ROOT=overlays`. |
-| `make cluster.<name>.platform` | Write gitignored `clusters/<name>/platform.json` for a sibling virt/storage stack ([issue #16](https://github.com/rh-mobb/validated-pattern-aro-hcp/issues/16)). |
+| `make cluster.<name>.platform` | Write gitignored `clusters/<name>/platform.json` for a sibling virt/storage stack. Full path: [Virt stack](docs/guides/virt-stack.md). |
 | `make cluster.<name>.external-auth-delete` | Remove in-cluster console secret (does not delete the Terraform Entra app) |
 
 ## Configuration

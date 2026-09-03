@@ -75,5 +75,6 @@ nav:
   - Guides:
       - External Auth (Entra ID): guides/external-auth-entra-id.md
       - GitOps bootstrap: guides/gitops.md
+      - OpenShift Virtualization full stack: guides/virt-stack.md
   - Reference:
       - Architecture: architecture.md
